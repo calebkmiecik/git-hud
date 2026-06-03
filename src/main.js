@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, globalShortcut, screen } = require('electron');
 const path = require('node:path');
 const { loadConfig } = require('./config');
 const { RepoMonitor } = require('./monitor');
@@ -33,6 +33,7 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'screen-saver');
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', pushUpdate);
+  win.on('closed', () => { win = null; });
 }
 
 function pushUpdate() {
@@ -60,7 +61,10 @@ app.whenReady().then(() => {
     monitors.push(m);
   }
 
-  globalShortcut.register(cfg.hotkey, toggle);
+  const registered = globalShortcut.register(cfg.hotkey, toggle);
+  if (!registered) {
+    cfgError = (cfgError ? cfgError + ' | ' : '') + `Hotkey ${cfg.hotkey} already in use`;
+  }
 });
 
 app.on('will-quit', () => {

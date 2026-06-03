@@ -31,8 +31,10 @@ function loadConfig(appDir) {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     return { config: applyDefaults(raw), error: null };
   } catch (e) {
-    const reason = e.code === 'ENOENT' ? 'config.json not found — using defaults'
-                                       : 'config.json malformed — using defaults';
+    let reason;
+    if (e.code === 'ENOENT') reason = 'config.json not found — using defaults';
+    else if (e instanceof SyntaxError) reason = 'config.json malformed — using defaults';
+    else reason = 'config.json unreadable — using defaults';
     return { config: applyDefaults({}), error: reason };
   }
 }
