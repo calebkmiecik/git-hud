@@ -29,7 +29,8 @@ Built with **Electron** (Node 25, git 2.53 already present; no new toolchain).
 
 ## Configuration
 
-`config.json` at the project root:
+`config.json` in the git-hud install directory, resolved relative to the app
+(via `__dirname` / `app.getAppPath()`), not the current working directory:
 
 ```json
 {
@@ -95,7 +96,9 @@ Four small modules with clear boundaries:
   short SHA from `git rev-parse --short HEAD`.
 - `getDirty(repoPath)` → `git status --porcelain`; any output ⇒ dirty.
 - `getAheadBehind(repoPath)` → `git rev-list --count --left-right @{upstream}...HEAD`;
-  no upstream ⇒ `null` (arrows omitted).
+  output is `behind<TAB>ahead` (left column = upstream-only commits = behind; right
+  column = HEAD-only commits = ahead). Parser tests must pin this mapping so the two
+  don't get swapped. No upstream ⇒ `null` (arrows omitted).
 - `getRepoState(repoPath)` → composes the above into a single state object.
 - Parsing logic is separated from process execution so parsers can be unit-tested
   against captured sample output.
@@ -106,7 +109,8 @@ Four small modules with clear boundaries:
 - Receives `hud:update` state arrays over IPC and renders a compact list.
 - Each row: repo name · branch · `↑2 ↓1` ahead/behind · status dot
   (green = clean, amber = dirty).
-- Dark, translucent styling sized to content.
+- Dark, translucent styling sized to content, with a max height (default ~50% of
+  screen) and internal scroll so a long repo list can't grow the window unbounded.
 - Error/banner area for config or git-not-found messages.
 - **Depends on:** IPC bridge exposed via a `preload.js` contextBridge.
 
@@ -115,6 +119,9 @@ Four small modules with clear boundaries:
 1. Startup: `main` loads config → spawns monitors → each monitor computes initial
    state and fires `onChange`.
 2. `main` aggregates the latest state per repo and pushes `hud:update` to the renderer.
+   Pushes are incremental: each repo's `onChange` triggers a fresh `hud:update` with
+   the full current array, so rows appear as repos report rather than waiting for all.
+   The renderer shows a brief loading/empty state until the first update arrives.
 3. Branch switch / staging change → `fs.watch` fires → debounced → monitor recomputes
    → `onChange` → `main` → IPC → renderer re-renders.
 4. Every `pollIntervalMs`, each monitor refreshes ahead/behind on the same path.
