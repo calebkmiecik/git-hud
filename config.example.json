@@ -1,6 +1,6 @@
 {
-  "repos": [
-    "C:\\Users\\Caleb\\Documents\\projects\\rank-anything"
+  "roots": [
+    "C:\\Users\\Caleb\\Documents\\projects"
   ],
   "hotkey": "Control+Alt+G",
   "pollIntervalMs": 20000,

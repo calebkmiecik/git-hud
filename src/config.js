@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const DEFAULTS = {
-  repos: [],
+  roots: [],
   hotkey: 'Control+Alt+G',
   pollIntervalMs: 20000,
   startVisible: false,
@@ -12,7 +12,7 @@ const DEFAULTS = {
 function applyDefaults(raw) {
   const r = raw || {};
   return {
-    repos: Array.isArray(r.repos) ? r.repos : DEFAULTS.repos,
+    roots: Array.isArray(r.roots) ? r.roots : DEFAULTS.roots,
     hotkey: r.hotkey || DEFAULTS.hotkey,
     pollIntervalMs: Number.isFinite(r.pollIntervalMs) ? r.pollIntervalMs : DEFAULTS.pollIntervalMs,
     startVisible: typeof r.startVisible === 'boolean' ? r.startVisible : DEFAULTS.startVisible,
