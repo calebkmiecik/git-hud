@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; background: transparent;
+    font: 12px/1.4 "Segoe UI", system-ui, sans-serif; -webkit-user-select: none; }
+  #hud { background: rgba(20,22,28,0.82); color: #e6e6e6; border-radius: 10px;
+    padding: 8px 10px; max-height: 50vh; overflow-y: auto;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.45); backdrop-filter: blur(6px);
+    -webkit-app-region: drag; }
+  .banner { color: #ffcf6b; font-size: 11px; margin-bottom: 6px; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+  .clean { background: #4caf50; } .dirty { background: #ffb300; }
+  .name { color: #9aa4b2; flex: 0 0 auto; max-width: 120px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .branch { color: #e6e6e6; font-weight: 600; flex: 1 1 auto; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .ab { color: #7fb2ff; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  .err { color: #ff7b72; flex: 1 1 auto; }
+  .loading { color: #6b7280; }
+</style>
+</head>
+<body>
+  <div id="hud"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>
