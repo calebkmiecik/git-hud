@@ -28,3 +28,7 @@ test('parseAheadBehind maps left=behind right=ahead', () => {
 test('parseAheadBehind null when no upstream (empty)', () => {
   assert.equal(parseAheadBehind(''), null);
 });
+
+test('parseAheadBehind null when non-numeric (NaN guard)', () => {
+  assert.equal(parseAheadBehind('foo\tbar\n'), null);
+});

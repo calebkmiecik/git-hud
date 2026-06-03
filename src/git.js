@@ -16,7 +16,7 @@ function parseDirty(porcelainStdout) {
 function parseAheadBehind(revListStdout) {
   const line = revListStdout.trim();
   if (!line) return null;
-  const [behind, ahead] = line.split(/\s+/).map(Number);
+  const [behind, ahead] = line.split('\t').map(Number);
   if (Number.isNaN(behind) || Number.isNaN(ahead)) return null;
   return { behind, ahead };
 }
