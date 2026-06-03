@@ -1,0 +1,12 @@
+{
+  "repos": [
+    "C:\\Users\\Caleb\\Documents\\projects\\rank-anything"
+  ],
+  "hotkey": "Control+Alt+G",
+  "pollIntervalMs": 20000,
+  "startVisible": false,
+  "window": {
+    "position": "top-right",
+    "opacity": 0.9
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "git-hud",
+  "version": "0.1.0",
+  "description": "Always-on-top overlay showing git branch status for tracked repos",
+  "main": "src/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
