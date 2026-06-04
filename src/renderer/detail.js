@@ -21,6 +21,14 @@
   const TERMINAL_GLYPH = '<span class="glyph"></span>';
   const EXPLORER_GLYPH = '<span class="glyph"></span>';
 
+  // Push button only when the branch is purely ahead of its upstream
+  // (ahead > 0, behind 0/none) — the one safe, one-click push case.
+  function pushButtonHtml(repo) {
+    const ahead = repo.ahead, behind = repo.behind;
+    if (!ahead || behind) return '';
+    return `<div class="dpush"><button class="pushbtn">↑ Push ${ahead} commit${ahead === 1 ? '' : 's'}</button></div>`;
+  }
+
   function detailHtml(repo) {
     return `<div class="dhead">
         <button class="back" title="Back to list">←</button>
@@ -32,6 +40,7 @@
         <span class="ab">${esc(abText(repo))}</span>
       </div>
       <div class="dinfo"><span class="dim">loading…</span></div>
+      ${pushButtonHtml(repo)}
       <div class="dactions">
         <button class="act" data-act="editor" title="Open in VS Code"><span class="ico">${VSCODE_SVG}</span><span class="lbl">Code</span></button>
         <button class="act" data-act="terminal" title="Open a terminal here"><span class="ico">${TERMINAL_GLYPH}</span><span class="lbl">Terminal</span></button>

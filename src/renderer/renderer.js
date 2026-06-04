@@ -51,6 +51,26 @@ function showDetail(repo) {
   detailEl.innerHTML = window.detailHtml(repo);
   detailEl.querySelector('.back').addEventListener('click', showList);
 
+  // Push button (only present when the branch is purely ahead of its upstream).
+  const pushBtn = detailEl.querySelector('.pushbtn');
+  if (pushBtn) {
+    pushBtn.addEventListener('click', async () => {
+      statusEl.hidden = true;
+      const label = pushBtn.textContent;
+      pushBtn.disabled = true;
+      pushBtn.textContent = 'Pushing…';
+      const res = await window.hud.push(repo.path);
+      if (res && res.ok) {
+        pushBtn.textContent = 'Pushed ✓';
+      } else {
+        pushBtn.disabled = false;
+        pushBtn.textContent = label;
+        statusEl.textContent = 'Push failed: ' + ((res && res.error) || 'unknown');
+        statusEl.hidden = false;
+      }
+    });
+  }
+
   // Fill the branch-info block once the on-demand git fetch resolves. The
   // isConnected guard skips the update if the user navigated away first.
   const infoEl = detailEl.querySelector('.dinfo');

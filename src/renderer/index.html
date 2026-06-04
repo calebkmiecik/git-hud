@@ -103,6 +103,13 @@
   #detail .dinfo .dim { color: var(--dim); }
   #detail .dbranch { color: var(--fg); font-weight: 600; flex: 1 1 auto; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
+  #detail .dpush { margin-bottom: 12px; }
+  #detail .pushbtn { -webkit-app-region: no-drag; width: 100%; padding: 7px 8px; border-radius: 7px;
+    background: rgba(127,178,255,0.12); color: var(--accent); border: 1px solid rgba(127,178,255,0.32);
+    cursor: pointer; font: inherit; font-size: 11px; font-weight: 600;
+    transition: background .12s ease; }
+  #detail .pushbtn:hover { background: rgba(127,178,255,0.22); }
+  #detail .pushbtn:disabled { opacity: .55; cursor: default; }
   #detail .dactions { display: flex; gap: 3px; }
   #detail .act { -webkit-app-region: no-drag; flex: 1 1 0; display: flex; flex-direction: column;
     align-items: center; gap: 5px; background: none; border: none; border-radius: 8px;
