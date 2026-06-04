@@ -2,6 +2,7 @@ const { app, BrowserWindow, globalShortcut, ipcMain, dialog, screen, Tray, Menu,
 const path = require('node:path');
 const fs = require('node:fs');
 const { execFile, spawn } = require('node:child_process');
+const http = require('node:http');
 const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 const { loadConfig, ensureConfig } = require('./config');
@@ -14,6 +15,7 @@ const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot } = req
 
 let win = null;
 let tray = null;
+let agentServer = null;
 let appDir = null;
 let dataDir = null; // writable userData dir for config.json + state.json
 let monitors = new Map(); // repoPath -> RepoMonitor
@@ -42,7 +44,12 @@ function createWindow() {
     frame: false, transparent: true, resizable: false,
     alwaysOnTop: true, skipTaskbar: true, show: cfg.startVisible,
     opacity: cfg.window.opacity,
-    webPreferences: { preload: path.join(__dirname, 'preload.js') },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      // Let agent-ping sounds play even when the overlay is hidden / unfocused.
+      autoplayPolicy: 'no-user-gesture-required',
+      backgroundThrottling: false,
+    },
   });
   win.setAlwaysOnTop(true, 'screen-saver');
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -142,6 +149,26 @@ function toggle() {
   if (tray) tray.setContextMenu(buildTrayMenu());
 }
 
+// Loopback HTTP listener for Claude Code hook pings. A hook POSTs to
+// http://127.0.0.1:<agentPort>/?type=stop|idle|permission&project=<dir>; we
+// forward it to the renderer, which plays the matching sound + toast.
+function startAgentListener() {
+  const port = cfg.agentPort;
+  if (!port) return;
+  agentServer = http.createServer((req, res) => {
+    let type = '', project = '';
+    try {
+      const u = new URL(req.url, 'http://127.0.0.1');
+      type = u.searchParams.get('type') || '';
+      project = u.searchParams.get('project') || '';
+    } catch { /* malformed url */ }
+    res.writeHead(204); res.end();
+    if (win && type) win.webContents.send('hud:agentEvent', { type, project });
+  });
+  agentServer.on('error', (e) => { console.error('agent listener failed:', e.message); agentServer = null; });
+  agentServer.listen(port, '127.0.0.1');
+}
+
 // Push the current branch to its upstream (no args = use configured upstream).
 // Never throws; returns { ok, error? } with the last line of git's stderr.
 async function gitPush(repoPath) {
@@ -222,6 +249,7 @@ app.whenReady().then(() => {
   rescan();
   reconcile();
   createTray();
+  startAgentListener();
 
   // Picker: rescan and return discovered repos grouped by root + enabled flags + roots.
   ipcMain.handle('hud:getPicker', () => {
@@ -284,6 +312,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   for (const m of monitors.values()) m.stop();
   if (tray) { tray.destroy(); tray = null; }
+  if (agentServer) { agentServer.close(); agentServer = null; }
 });
 
 // Mac convention; harmless on Windows.

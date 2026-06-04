@@ -1,0 +1,36 @@
+{
+  "_comment": "Add this `hooks` block to your global ~/.claude/settings.json (alongside permissions, enabledPlugins, etc.) to make git-hud chime on agent events. Port 47600 must match config.json's agentPort.",
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -WindowStyle Hidden -Command \"try { iwr -UseBasicParsing -Uri ('http://127.0.0.1:47600/?type=stop&project=' + [uri]::EscapeDataString(($env:CLAUDE_PROJECT_DIR + ''))) -Method POST -TimeoutSec 2 | Out-Null } catch {}\""
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -WindowStyle Hidden -Command \"try { iwr -UseBasicParsing -Uri ('http://127.0.0.1:47600/?type=permission&project=' + [uri]::EscapeDataString(($env:CLAUDE_PROJECT_DIR + ''))) -Method POST -TimeoutSec 2 | Out-Null } catch {}\""
+          }
+        ]
+      },
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -WindowStyle Hidden -Command \"try { iwr -UseBasicParsing -Uri ('http://127.0.0.1:47600/?type=idle&project=' + [uri]::EscapeDataString(($env:CLAUDE_PROJECT_DIR + ''))) -Method POST -TimeoutSec 2 | Out-Null } catch {}\""
+          }
+        ]
+      }
+    ]
+  }
+}

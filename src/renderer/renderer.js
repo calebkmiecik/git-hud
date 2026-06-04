@@ -5,6 +5,10 @@ const detailEl = document.getElementById('detail');
 const gearEl = document.getElementById('gear');
 
 let reposByPath = new Map(); // path -> latest repo state, for opening the detail view
+let latestRepos = [];        // last payload, so agent events can re-render the list
+let latestError = null;
+const attention = new Map();  // repoPath -> 'attn' | 'turn' (agent-event row highlight)
+const turnTimers = new Map(); // repoPath -> timeout ('turn' highlight auto-expires)
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
@@ -21,7 +25,9 @@ function abText(r) {
 function rowHtml(r) {
   if (r.loading) return `<div class="row"><span class="name">${esc(r.name)}</span><span class="loading">…</span></div>`;
   if (r.error) return `<div class="row"><span class="dot dirty"></span><span class="name">${esc(r.name)}</span><span class="err">${esc(r.error)}</span></div>`;
-  return `<div class="row" data-path="${esc(r.path)}">
+  const att = attention.get(r.path);
+  const attClass = att === 'attn' ? ' att-attn' : att === 'turn' ? ' att-turn' : '';
+  return `<div class="row${attClass}" data-path="${esc(r.path)}">
     <span class="dot ${r.dirty ? 'dirty' : 'clean'}"></span>
     <span class="name">${esc(r.name)}</span>
     <span class="branch">${esc(r.branch)}</span>
@@ -29,13 +35,19 @@ function rowHtml(r) {
   </div>`;
 }
 
-window.hud.onUpdate(({ repos, error }) => {
-  reposByPath = new Map(repos.map(r => [r.path, r]));
-  const banner = error ? `<div class="banner">${esc(error)}</div>` : '';
-  const rows = repos.length
-    ? repos.map(rowHtml).join('')
+function renderList() {
+  const banner = latestError ? `<div class="banner">${esc(latestError)}</div>` : '';
+  const rows = latestRepos.length
+    ? latestRepos.map(rowHtml).join('')
     : '<div class="row loading">No repos selected — click ⚙</div>';
   listEl.innerHTML = banner + rows;
+}
+
+window.hud.onUpdate(({ repos, error }) => {
+  latestRepos = repos;
+  latestError = error;
+  reposByPath = new Map(repos.map(r => [r.path, r]));
+  renderList();
 });
 
 // ---- detail view ----
@@ -82,7 +94,13 @@ function countdownThenCheck(pushArrow, from) {
   setTimeout(step, times[0]);
 }
 
+function clearAttention(path) {
+  if (turnTimers.has(path)) { clearTimeout(turnTimers.get(path)); turnTimers.delete(path); }
+  if (attention.delete(path)) renderList();
+}
+
 function showDetail(repo) {
+  clearAttention(repo.path); // opening a repo acknowledges its agent highlight
   detailEl.innerHTML = window.detailHtml(repo);
   detailEl.querySelector('.back').addEventListener('click', showList);
 
@@ -250,3 +268,64 @@ gearEl.addEventListener('click', () => {
 });
 
 window.hud.onOpenSettings(() => openPicker());
+
+// ---- agent pings (sound + repo-row highlight on Claude Code hook events) ----
+let audioCtx = null;
+function audio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// A single sine note with a quick attack and exponential decay.
+function tone(c, freq, start, dur, peak) {
+  const osc = c.createOscillator(), g = c.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(peak, start + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  osc.connect(g); g.connect(c.destination);
+  osc.start(start);
+  osc.stop(start + dur + 0.03);
+}
+
+function playYourTurn() { const c = audio(), t = c.currentTime; tone(c, 660, t, 0.16, 0.13); tone(c, 880, t + 0.13, 0.22, 0.13); }
+function playNeedsYou() { const c = audio(), t = c.currentTime; tone(c, 600, t, 0.12, 0.20); tone(c, 600, t + 0.18, 0.16, 0.20); }
+
+// Match an event's project dir to a tracked repo path (case-insensitive, slash- and
+// trailing-slash-insensitive), so we can highlight the right row.
+function normPath(p) { return String(p || '').replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase(); }
+function findRepoPath(project) {
+  if (!project) return null;
+  const target = normPath(project);
+  for (const p of reposByPath.keys()) if (normPath(p) === target) return p;
+  return null;
+}
+
+// stop + idle both mean "your turn" and fire back-to-back; collapse per category.
+const lastPing = {};
+window.hud.onAgentEvent(({ type, project }) => {
+  const attn = type === 'permission';
+  const category = attn ? 'attn' : 'turn';
+  const now = performance.now();
+  if (lastPing[category] && now - lastPing[category] < 1200) return;
+  lastPing[category] = now;
+
+  if (attn) playNeedsYou(); else playYourTurn();
+
+  // Highlight the matching repo row (sound-only if the project isn't tracked).
+  const path = findRepoPath(project);
+  if (!path) return;
+  if (turnTimers.has(path)) { clearTimeout(turnTimers.get(path)); turnTimers.delete(path); }
+  // "needs you" outranks a pending "your turn"; don't downgrade attn -> turn.
+  if (attn || attention.get(path) !== 'attn') attention.set(path, category);
+  renderList();
+  // "your turn" is ambient — auto-clear after a bit; "needs you" persists until acknowledged.
+  if (!attn) {
+    turnTimers.set(path, setTimeout(() => {
+      if (attention.get(path) === 'turn') { attention.delete(path); renderList(); }
+      turnTimers.delete(path);
+    }, 8000));
+  }
+});

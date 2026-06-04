@@ -6,5 +6,6 @@
   "window": {
     "position": "top-right",
     "opacity": 0.9
-  }
+  },
+  "agentPort": 47600
 }
