@@ -136,19 +136,38 @@ async function detectBase(repoPath, current) {
   return { ref, baseAhead: c.ahead, baseBehind: c.refOnly, exact: false };
 }
 
+// All selectable branches (local + remote) for the compare-branch picker.
+async function listBranches(repoPath) {
+  try {
+    const out = await git(repoPath, ['for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes']);
+    return out.split('\n').map(s => s.trim()).filter(Boolean).filter(r => lastSeg(r) !== 'HEAD');
+  } catch { return []; }
+}
+
 // On-demand richer git state for the detail view's branch-info section.
+// opts.base = a user-chosen compare branch (exact, persisted by the caller).
 // Never throws; fields fall back to safe defaults on error.
-async function getRepoDetail(repoPath) {
+async function getRepoDetail(repoPath, opts = {}) {
   const out = { base: null, baseAhead: null, baseBehind: null, baseExact: false,
+                baseManual: false, branches: [],
                 stash: 0, conflicts: 0, inProgress: null, error: null };
   try {
-    // Fork parent: the reflog's recorded source branch (exact) when available,
-    // else the most-recent-divergence heuristic, else the remote default branch.
+    // Compare branch, in priority order:
+    //   0. a user-chosen branch (opts.base) — accurate by definition
+    //   1. the reflog's recorded fork parent (exact)
+    //   2. the most-recent-divergence heuristic (guess)
+    //   3. the remote default branch (origin/HEAD)
     try {
       const current = (await git(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
-      let info = (current && current !== 'HEAD') ? await detectBase(repoPath, current) : null;
+      out.branches = await listBranches(repoPath);
+
+      let info = null;
+      if (opts.base && out.branches.includes(opts.base)) {
+        const ab = parseAheadBehind(await git(repoPath, ['rev-list', '--count', '--left-right', `${opts.base}...HEAD`]).catch(() => ''));
+        if (ab) info = { ref: opts.base, baseAhead: ab.ahead, baseBehind: ab.behind, exact: true, manual: true };
+      }
+      if (!info && current && current !== 'HEAD') info = await detectBase(repoPath, current);
       if (!info) {
-        // Fall back to the remote default branch when no fork parent is found.
         const def = (await git(repoPath, ['rev-parse', '--abbrev-ref', 'origin/HEAD']).catch(() => '')).trim();
         if (def && def !== 'origin/HEAD' && def !== current) {
           const ab = parseAheadBehind(await git(repoPath, ['rev-list', '--count', '--left-right', `${def}...HEAD`]));
@@ -158,6 +177,7 @@ async function getRepoDetail(repoPath) {
       if (info) {
         out.base = info.ref; out.baseAhead = info.baseAhead;
         out.baseBehind = info.baseBehind; out.baseExact = !!info.exact;
+        out.baseManual = !!info.manual;
       }
     } catch { /* detached / no refs */ }
 
@@ -181,4 +201,4 @@ async function getRepoDetail(repoPath) {
   return out;
 }
 
-module.exports = { countLines, inProgressLabel, pickBaseBranch, parseReflogParent, getRepoDetail };
+module.exports = { countLines, inProgressLabel, pickBaseBranch, parseReflogParent, listBranches, getRepoDetail };

@@ -133,8 +133,62 @@ function showDetail(repo) {
   // Fill the branch-info block once the on-demand git fetch resolves. The
   // isConnected guard skips the update if the user navigated away first.
   const infoEl = detailEl.querySelector('.dinfo');
+  function fillInfo(detail) {
+    if (!infoEl.isConnected) return;
+    infoEl.innerHTML = window.branchInfoHtml(detail);
+    wireBasePicker(detail);
+  }
+
+  // Custom searchable, "/"-grouped compare-branch picker.
+  function wireBasePicker(detail) {
+    const box = infoEl.querySelector('.basetrigger');
+    const pop = infoEl.querySelector('.basepop');
+    if (!box || !pop) return;
+    const search = pop.querySelector('.basesearch');
+    const list = pop.querySelector('.baselist');
+    const current = detail.baseManual ? detail.base : null;
+    const render = () => { list.innerHTML = window.branchListHtml(detail.branches, search.value, current); };
+
+    const onDocDown = (e) => { if (!pop.contains(e.target) && e.target !== box) close(); };
+    function open() {
+      pop.hidden = false; search.value = ''; render();
+      search.focus();
+      document.addEventListener('mousedown', onDocDown, true);
+    }
+    function close() {
+      pop.hidden = true;
+      document.removeEventListener('mousedown', onDocDown, true);
+    }
+    async function choose(value) { close(); fillInfo(await window.hud.setBase(repo.path, value || null)); }
+
+    box.addEventListener('click', () => pop.hidden ? open() : close());
+    search.addEventListener('input', render);
+    list.addEventListener('mousedown', (e) => {
+      const it = e.target.closest('.baseitem');
+      if (it) { e.preventDefault(); choose(it.dataset.branch); }
+    });
+    search.addEventListener('keydown', (e) => {
+      const items = [...list.querySelectorAll('.baseitem')];
+      if (!items.length) return;
+      let i = items.findIndex(el => el.classList.contains('kbd'));
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (i >= 0) items[i].classList.remove('kbd');
+        i = e.key === 'ArrowDown' ? Math.min(items.length - 1, i + 1) : Math.max(0, i - 1);
+        items[i].classList.add('kbd');
+        items[i].scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const t = items[i] || items[0];
+        if (t) choose(t.dataset.branch);
+      } else if (e.key === 'Escape') {
+        e.preventDefault(); close(); box.focus();
+      }
+    });
+  }
+
   window.hud.getDetail(repo.path)
-    .then(detail => { if (infoEl.isConnected) infoEl.innerHTML = window.branchInfoHtml(detail); })
+    .then(fillInfo)
     .catch(() => { if (infoEl.isConnected) infoEl.innerHTML = '<span class="dim">couldn\'t load branch info</span>'; });
 
   const statusEl = detailEl.querySelector('.dstatus');

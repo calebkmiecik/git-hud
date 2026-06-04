@@ -44,4 +44,19 @@ function removeRoot(state, rootPath) {
   return state;
 }
 
-module.exports = { statePath, loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot };
+// Manual compare-branch override, per repo. null/absent = auto-detect.
+function getBase(state, repoPath) {
+  return (state.base && state.base[repoPath]) || null;
+}
+
+function setBase(state, repoPath, branch) {
+  if (!state.base) state.base = {};
+  if (branch) state.base[repoPath] = branch;
+  else delete state.base[repoPath];
+  return state;
+}
+
+module.exports = {
+  statePath, loadState, saveState, isEnabled, setEnabled,
+  addRoot, removeRoot, getBase, setBase,
+};

@@ -21,5 +21,6 @@ contextBridge.exposeInMainWorld('hud', {
   moveWin: (x, y) => ipcRenderer.send('hud:moveWin', x, y),
   openExternal: (repoPath, target) => ipcRenderer.invoke('hud:openExternal', repoPath, target),
   getDetail: (repoPath) => ipcRenderer.invoke('hud:getDetail', repoPath),
+  setBase: (repoPath, branch) => ipcRenderer.invoke('hud:setBase', repoPath, branch),
   push: (repoPath) => ipcRenderer.invoke('hud:push', repoPath),
 });

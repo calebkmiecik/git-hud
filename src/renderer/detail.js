@@ -80,25 +80,63 @@
   function branchInfoHtml(detail) {
     if (detail && detail.error) return '<span class="dim">couldn\'t load branch info</span>';
     detail = detail || {};
+    const cur = detail.baseManual ? detail.base : null;
+    const trig = cur ? esc(cur)
+      : (detail.base ? `Auto · ${esc(detail.base)}${detail.baseExact ? '' : ' (guess)'}` : 'Auto');
     const rows = [];
-    if (detail.base) {
-      const val = detail.baseExact
-        ? `<span class="dim">${esc(detail.base)}</span>`
-        : `<span class="dim">${esc(detail.base)} (guess)</span>`;
-      const title = detail.baseExact
-        ? 'forked from this branch (per reflog)'
-        : 'best guess — git records no fork parent, and no reflog entry was found';
-      rows.push(infoRow(detail.baseExact ? 'Forked from' : 'Base', val, { title }));
-      rows.push(infoRow('Diverged', divergedText(detail)));
-    } else {
-      rows.push(infoRow('Base', '<span class="dim">no remote default branch</span>'));
-    }
+    rows.push(`<div class="dinfo-row"><span class="k">Compare to</span><span class="v">`
+      + `<button type="button" class="basetrigger">${trig} <span class="caret">▾</span></button></span></div>`);
+    rows.push('<div class="basepop" hidden>'
+      + '<input type="text" class="basesearch" placeholder="Filter branches…" spellcheck="false" />'
+      + '<div class="baselist"></div></div>');
+    rows.push(infoRow('Diverged', detail.base ? divergedText(detail) : '<span class="dim">—</span>'));
     if (detail.stash > 0) rows.push(infoRow('Stashes', String(detail.stash)));
     if (detail.inProgress) rows.push(infoRow('In progress', esc(detail.inProgress), { warn: true }));
     if (detail.conflicts > 0) rows.push(infoRow('Conflicts', String(detail.conflicts), { warn: true }));
     return rows.join('');
   }
 
+  function baseItem(value, label, active, indent) {
+    const pad = 8 + indent * 14;
+    return `<div class="baseitem${active ? ' active' : ''}" data-branch="${esc(value)}" `
+      + `style="padding-left:${pad}px">${esc(label)}</div>`;
+  }
+
+  // Build the filterable branch list. Empty query → grouped by "/" prefix (the
+  // path up to the last slash), leaves indented. Non-empty query → flat
+  // substring matches. `current` is the chosen branch (null = Auto).
+  function branchListHtml(branches, query, current) {
+    branches = Array.isArray(branches) ? branches : [];
+    const q = (query || '').trim().toLowerCase();
+    const rows = [baseItem('', 'Auto (detect)', current == null, 0)];
+
+    if (q) {
+      const hits = branches.filter(b => b.toLowerCase().includes(q)).slice(0, 300);
+      for (const b of hits) rows.push(baseItem(b, b, b === current, 0));
+      if (!hits.length) rows.push('<div class="baseempty">no matches</div>');
+      return rows.join('');
+    }
+
+    const groups = new Map(); // prefix -> [{ full, leaf }]
+    for (const b of branches) {
+      const i = b.lastIndexOf('/');
+      const prefix = i === -1 ? '' : b.slice(0, i);
+      const leaf = i === -1 ? b : b.slice(i + 1);
+      if (!groups.has(prefix)) groups.set(prefix, []);
+      groups.get(prefix).push({ full: b, leaf });
+    }
+    const order = [...groups.keys()].sort((a, b) =>
+      a === '' ? -1 : b === '' ? 1 : a.localeCompare(b));
+    for (const prefix of order) {
+      if (prefix) rows.push(`<div class="basegroup">${esc(prefix)}/</div>`);
+      for (const { full, leaf } of groups.get(prefix)) {
+        rows.push(baseItem(full, leaf, full === current, prefix ? 1 : 0));
+      }
+    }
+    return rows.join('');
+  }
+
   window.detailHtml = detailHtml;
   window.branchInfoHtml = branchInfoHtml;
+  window.branchListHtml = branchListHtml;
 })();

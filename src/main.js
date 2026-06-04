@@ -11,7 +11,7 @@ const { githubUrlFromRemote, resolveOpenCommand } = require('./open');
 const { getRepoDetail } = require('./gitDetail');
 const { RepoMonitor } = require('./monitor');
 const { discoverRepos } = require('./discovery');
-const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot } = require('./state');
+const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot, getBase, setBase } = require('./state');
 
 let win = null;
 let tray = null;
@@ -37,7 +37,7 @@ function positionFor(position, width, height) {
 }
 
 function createWindow() {
-  const width = 320, height = 400;
+  const width = 320, height = 520;
   const { x, y } = positionFor(cfg.window.position, width, height);
   win = new BrowserWindow({
     width, height, x, y,
@@ -305,7 +305,15 @@ app.whenReady().then(() => {
   ipcMain.handle('hud:openExternal', (_e, repoPath, target) => openExternal(repoPath, target));
 
   // Detail view: fetch richer git state on demand (upstream, stash, in-progress).
-  ipcMain.handle('hud:getDetail', (_e, repoPath) => getRepoDetail(repoPath));
+  // Pass the user's chosen compare branch (if any) so it's used over auto-detect.
+  ipcMain.handle('hud:getDetail', (_e, repoPath) => getRepoDetail(repoPath, { base: getBase(state, repoPath) }));
+
+  // Detail view: set/clear the manual compare branch for a repo, then recompute.
+  ipcMain.handle('hud:setBase', (_e, repoPath, branch) => {
+    setBase(state, repoPath, branch);
+    saveState(dataDir, state);
+    return getRepoDetail(repoPath, { base: getBase(state, repoPath) });
+  });
 
   // Detail view: push the current branch to its upstream.
   ipcMain.handle('hud:push', (_e, repoPath) => gitPush(repoPath));
