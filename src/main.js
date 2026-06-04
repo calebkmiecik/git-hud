@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, dialog, screen } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, dialog, screen, Tray, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { loadConfig, ensureConfig } = require('./config');
@@ -8,6 +8,7 @@ const { discoverRepos } = require('./discovery');
 const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot } = require('./state');
 
 let win = null;
+let tray = null;
 let appDir = null;
 let dataDir = null; // writable userData dir for config.json + state.json
 let monitors = new Map(); // repoPath -> RepoMonitor
@@ -90,10 +91,50 @@ function reconcile() {
   pushUpdate();
 }
 
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    { label: win && win.isVisible() ? 'Hide' : 'Show', click: toggle },
+    {
+      label: 'Open settings…',
+      click: () => {
+        if (!win) return;
+        win.show();
+        win.setAlwaysOnTop(true, 'screen-saver');
+        win.webContents.send('hud:openSettings');
+        if (tray) tray.setContextMenu(buildTrayMenu());
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Start at login',
+      type: 'checkbox',
+      checked: app.getLoginItemSettings().openAtLogin,
+      click: (item) => {
+        try { app.setLoginItemSettings({ openAtLogin: item.checked }); }
+        catch (e) { console.error('setLoginItemSettings failed:', e.message); }
+      },
+    },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() },
+  ]);
+}
+
+function createTray() {
+  try {
+    tray = new Tray(path.join(appDir, 'icon.ico'));
+    tray.setToolTip('git-hud');
+    tray.setContextMenu(buildTrayMenu());
+    tray.on('click', toggle);
+  } catch (e) {
+    console.error('Tray init failed; continuing without tray:', e.message);
+  }
+}
+
 function toggle() {
   if (!win) return;
   if (win.isVisible()) win.hide();
   else { win.show(); win.setAlwaysOnTop(true, 'screen-saver'); }
+  if (tray) tray.setContextMenu(buildTrayMenu());
 }
 
 app.whenReady().then(() => {
@@ -113,6 +154,7 @@ app.whenReady().then(() => {
   createWindow();
   rescan();
   reconcile();
+  createTray();
 
   // Picker: rescan and return discovered repos grouped by root + enabled flags + roots.
   ipcMain.handle('hud:getPicker', () => {

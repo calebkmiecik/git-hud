@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld('hud', {
     ipcRenderer.removeAllListeners('hud:update');
     ipcRenderer.on('hud:update', (_e, payload) => cb(payload));
   },
+  onOpenSettings: (cb) => {
+    ipcRenderer.removeAllListeners('hud:openSettings');
+    ipcRenderer.on('hud:openSettings', () => cb());
+  },
   getPicker: () => ipcRenderer.invoke('hud:getPicker'),
   setEnabled: (repoPath, on) => ipcRenderer.invoke('hud:setEnabled', repoPath, on),
   addRoot: () => ipcRenderer.invoke('hud:addRoot'),
