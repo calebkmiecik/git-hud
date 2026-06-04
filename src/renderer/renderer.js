@@ -47,8 +47,8 @@ function showList() {
   hudEl.classList.remove('detailing');
 }
 
-// Animate the ahead count down to 0 ticker-style (ease-in — slow start, fast
-// finish), then swap to a green check that pops and fades.
+// Tick the ahead count down one-by-one to 0, accelerating (gaps shrink) over a
+// ~1.5–2s total, then swap to a green check that pops and fades.
 function countdownThenCheck(pushArrow, from) {
   const numEl = pushArrow.querySelector('.pa-num');
   const showCheck = () => {
@@ -57,16 +57,21 @@ function countdownThenCheck(pushArrow, from) {
     setTimeout(() => { if (pushArrow.isConnected) pushArrow.classList.add('done'); }, 1000);
   };
   if (!numEl || from <= 0) { showCheck(); return; }
-  const duration = Math.min(900, 320 + from * 60);
-  const start = performance.now();
-  function frame(now) {
-    const t = Math.min(1, (now - start) / duration);
-    const eased = t * t; // ease-in: count drops slowly at first, then accelerates
-    numEl.textContent = String(Math.max(0, Math.round(from * (1 - eased))));
-    if (t < 1 && numEl.isConnected) requestAnimationFrame(frame);
-    else { numEl.textContent = '0'; showCheck(); }
+
+  const total = Math.min(2000, 500 + from * 95);
+  // Scheduled time of the k-th decrement (value -> from-k). Ease-out cumulative
+  // => gaps start large and shrink, so the count ramps up in speed.
+  const timeFor = (k) => total * (1 - Math.pow(1 - k / from, 2));
+  const t0 = performance.now();
+  let k = 0;
+  function step() {
+    if (!numEl.isConnected) return; // navigated away mid-countdown
+    k++;
+    numEl.textContent = String(from - k);
+    if (k >= from) { showCheck(); return; }
+    setTimeout(step, Math.max(0, timeFor(k + 1) - (performance.now() - t0)));
   }
-  requestAnimationFrame(frame);
+  setTimeout(step, timeFor(1));
 }
 
 function showDetail(repo) {
