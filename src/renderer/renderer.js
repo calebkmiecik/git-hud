@@ -47,9 +47,62 @@ function showList() {
   hudEl.classList.remove('detailing');
 }
 
+// Tick the ahead count down one-by-one to 0, accelerating (gaps shrink) over a
+// ~1.5–2s total, then swap to a green check that pops and fades.
+function countdownThenCheck(pushArrow, from) {
+  const numEl = pushArrow.querySelector('.pa-num');
+  const showCheck = () => {
+    pushArrow.classList.add('pushed');
+    pushArrow.textContent = '✓';
+    setTimeout(() => { if (pushArrow.isConnected) pushArrow.classList.add('done'); }, 1000);
+  };
+  if (!numEl || from <= 0) { showCheck(); return; }
+
+  const total = Math.min(2000, 500 + from * 95);
+  // Scheduled time of the k-th decrement (value -> from-k). Ease-out cumulative
+  // => gaps start large and shrink, so the count ramps up in speed.
+  const timeFor = (k) => total * (1 - Math.pow(1 - k / from, 2));
+  const t0 = performance.now();
+  let k = 0;
+  function step() {
+    if (!numEl.isConnected) return; // navigated away mid-countdown
+    k++;
+    numEl.textContent = String(from - k);
+    if (k >= from) { showCheck(); return; }
+    setTimeout(step, Math.max(0, timeFor(k + 1) - (performance.now() - t0)));
+  }
+  setTimeout(step, timeFor(1));
+}
+
 function showDetail(repo) {
   detailEl.innerHTML = window.detailHtml(repo);
   detailEl.querySelector('.back').addEventListener('click', showList);
+
+  // Click-to-push: the ↑N ahead indicator (present only when purely ahead).
+  const pushArrow = detailEl.querySelector('.pusharrow');
+  if (pushArrow) {
+    let busy = false;
+    pushArrow.addEventListener('click', async () => {
+      if (busy) return;
+      busy = true;
+      statusEl.hidden = true;
+      pushArrow.classList.add('pushing');
+      const res = await window.hud.push(repo.path);
+      pushArrow.classList.remove('pushing');
+      if (res && res.ok) {
+        // Ticker the ahead count down to zero (ease-in: gentle, then quick),
+        // then pop the green check.
+        countdownThenCheck(pushArrow, repo.ahead || 0);
+        // stays busy — nothing left to push
+      } else {
+        busy = false;
+        pushArrow.classList.add('failed');
+        setTimeout(() => pushArrow.classList.remove('failed'), 450);
+        statusEl.textContent = 'Push failed: ' + ((res && res.error) || 'unknown');
+        statusEl.hidden = false;
+      }
+    });
+  }
 
   // Fill the branch-info block once the on-demand git fetch resolves. The
   // isConnected guard skips the update if the user navigated away first.

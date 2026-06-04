@@ -2,6 +2,8 @@ const { app, BrowserWindow, globalShortcut, ipcMain, dialog, screen, Tray, Menu,
 const path = require('node:path');
 const fs = require('node:fs');
 const { execFile, spawn } = require('node:child_process');
+const { promisify } = require('node:util');
+const execFileAsync = promisify(execFile);
 const { loadConfig, ensureConfig } = require('./config');
 const { dataDir: getDataDir, configFile, exampleFile } = require('./paths');
 const { githubUrlFromRemote, resolveOpenCommand } = require('./open');
@@ -140,6 +142,18 @@ function toggle() {
   if (tray) tray.setContextMenu(buildTrayMenu());
 }
 
+// Push the current branch to its upstream (no args = use configured upstream).
+// Never throws; returns { ok, error? } with the last line of git's stderr.
+async function gitPush(repoPath) {
+  try {
+    await execFileAsync('git', ['-C', repoPath, 'push']);
+    return { ok: true };
+  } catch (e) {
+    const msg = (e.stderr || e.message || 'push failed').trim().split('\n').filter(Boolean).pop();
+    return { ok: false, error: msg || 'push failed' };
+  }
+}
+
 // Resolve a repo's `origin` remote URL, or null if there is none.
 function getRemoteUrl(repoPath) {
   return new Promise((resolve) => {
@@ -256,6 +270,9 @@ app.whenReady().then(() => {
 
   // Detail view: fetch richer git state on demand (upstream, stash, in-progress).
   ipcMain.handle('hud:getDetail', (_e, repoPath) => getRepoDetail(repoPath));
+
+  // Detail view: push the current branch to its upstream.
+  ipcMain.handle('hud:push', (_e, repoPath) => gitPush(repoPath));
 
   const registered = globalShortcut.register(cfg.hotkey, toggle);
   if (!registered) {

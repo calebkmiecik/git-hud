@@ -21,6 +21,18 @@
   const TERMINAL_GLYPH = '<span class="glyph"></span>';
   const EXPLORER_GLYPH = '<span class="glyph"></span>';
 
+  // The ahead/behind indicator in the header. When the branch is purely ahead of
+  // its upstream (ahead > 0, behind 0/none) the ↑N becomes a click-to-push control;
+  // otherwise it's the plain read-only indicator.
+  function aheadIndicator(repo) {
+    const ahead = repo.ahead, behind = repo.behind;
+    if (ahead && !behind) {
+      return `<button class="ab pusharrow" title="Push ${ahead} commit${ahead === 1 ? '' : 's'} to upstream">`
+        + `<span class="pa-arrow">↑</span><span class="pa-num">${ahead}</span></button>`;
+    }
+    return `<span class="ab">${esc(abText(repo))}</span>`;
+  }
+
   function detailHtml(repo) {
     return `<div class="dhead">
         <button class="back" title="Back to list">←</button>
@@ -29,7 +41,7 @@
       <div class="dmeta">
         <span class="dot ${repo.dirty ? 'dirty' : 'clean'}"></span>
         <span class="dbranch">${esc(repo.branch ?? '—')}</span>
-        <span class="ab">${esc(abText(repo))}</span>
+        ${aheadIndicator(repo)}
       </div>
       <div class="dinfo"><span class="dim">loading…</span></div>
       <div class="dactions">
