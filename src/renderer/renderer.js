@@ -47,6 +47,28 @@ function showList() {
   hudEl.classList.remove('detailing');
 }
 
+// Animate the ahead count down to 0 ticker-style (ease-in — slow start, fast
+// finish), then swap to a green check that pops and fades.
+function countdownThenCheck(pushArrow, from) {
+  const numEl = pushArrow.querySelector('.pa-num');
+  const showCheck = () => {
+    pushArrow.classList.add('pushed');
+    pushArrow.textContent = '✓';
+    setTimeout(() => { if (pushArrow.isConnected) pushArrow.classList.add('done'); }, 1000);
+  };
+  if (!numEl || from <= 0) { showCheck(); return; }
+  const duration = Math.min(900, 320 + from * 60);
+  const start = performance.now();
+  function frame(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = t * t; // ease-in: count drops slowly at first, then accelerates
+    numEl.textContent = String(Math.max(0, Math.round(from * (1 - eased))));
+    if (t < 1 && numEl.isConnected) requestAnimationFrame(frame);
+    else { numEl.textContent = '0'; showCheck(); }
+  }
+  requestAnimationFrame(frame);
+}
+
 function showDetail(repo) {
   detailEl.innerHTML = window.detailHtml(repo);
   detailEl.querySelector('.back').addEventListener('click', showList);
@@ -63,9 +85,9 @@ function showDetail(repo) {
       const res = await window.hud.push(repo.path);
       pushArrow.classList.remove('pushing');
       if (res && res.ok) {
-        pushArrow.classList.add('pushed');
-        pushArrow.textContent = '✓';
-        setTimeout(() => { if (pushArrow.isConnected) pushArrow.classList.add('done'); }, 1000);
+        // Ticker the ahead count down to zero (ease-in: gentle, then quick),
+        // then pop the green check.
+        countdownThenCheck(pushArrow, repo.ahead || 0);
         // stays busy — nothing left to push
       } else {
         busy = false;
