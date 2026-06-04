@@ -5,6 +5,7 @@ const { execFile, spawn } = require('node:child_process');
 const { loadConfig, ensureConfig } = require('./config');
 const { dataDir: getDataDir, configFile, exampleFile } = require('./paths');
 const { githubUrlFromRemote, resolveOpenCommand } = require('./open');
+const { getRepoDetail } = require('./gitDetail');
 const { RepoMonitor } = require('./monitor');
 const { discoverRepos } = require('./discovery');
 const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot } = require('./state');
@@ -252,6 +253,9 @@ app.whenReady().then(() => {
 
   // Detail view: open a repo externally (editor/terminal/explorer/github).
   ipcMain.handle('hud:openExternal', (_e, repoPath, target) => openExternal(repoPath, target));
+
+  // Detail view: fetch richer git state on demand (upstream, stash, in-progress).
+  ipcMain.handle('hud:getDetail', (_e, repoPath) => getRepoDetail(repoPath));
 
   const registered = globalShortcut.register(cfg.hotkey, toggle);
   if (!registered) {
