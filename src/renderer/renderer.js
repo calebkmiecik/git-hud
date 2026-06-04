@@ -250,3 +250,51 @@ gearEl.addEventListener('click', () => {
 });
 
 window.hud.onOpenSettings(() => openPicker());
+
+// ---- agent pings (sound + toast on Claude Code hook events) ----
+const toastEl = document.getElementById('toast');
+let audioCtx = null;
+function audio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// A single sine note with a quick attack and exponential decay.
+function tone(c, freq, start, dur, peak) {
+  const osc = c.createOscillator(), g = c.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(peak, start + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  osc.connect(g); g.connect(c.destination);
+  osc.start(start);
+  osc.stop(start + dur + 0.03);
+}
+
+function playYourTurn() { const c = audio(), t = c.currentTime; tone(c, 660, t, 0.16, 0.13); tone(c, 880, t + 0.13, 0.22, 0.13); }
+function playNeedsYou() { const c = audio(), t = c.currentTime; tone(c, 600, t, 0.12, 0.20); tone(c, 600, t + 0.18, 0.16, 0.20); }
+
+let toastTimer = 0;
+function showToast(label, project, attn) {
+  if (!toastEl) return;
+  const name = project ? project.split(/[\\/]/).filter(Boolean).pop() : '';
+  toastEl.textContent = name ? `${label} — ${name}` : label;
+  toastEl.classList.toggle('attn', !!attn);
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
+}
+
+// stop + idle both mean "your turn" and fire back-to-back; collapse per category.
+const lastPing = {};
+window.hud.onAgentEvent(({ type, project }) => {
+  const attn = type === 'permission';
+  const category = attn ? 'attn' : 'turn';
+  const now = performance.now();
+  if (lastPing[category] && now - lastPing[category] < 1200) return;
+  lastPing[category] = now;
+  if (attn) { playNeedsYou(); showToast('Needs you', project, true); }
+  else { playYourTurn(); showToast('Your turn', project, false); }
+});

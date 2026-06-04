@@ -7,6 +7,7 @@ const DEFAULTS = {
   pollIntervalMs: 20000,
   startVisible: false,
   window: { position: 'top-right', opacity: 0.9 },
+  agentPort: 47600,
 };
 
 function applyDefaults(raw) {
@@ -20,6 +21,7 @@ function applyDefaults(raw) {
       position: r.window?.position || DEFAULTS.window.position,
       opacity: Number.isFinite(r.window?.opacity) ? r.window.opacity : DEFAULTS.window.opacity,
     },
+    agentPort: Number.isFinite(r.agentPort) ? r.agentPort : DEFAULTS.agentPort,
   };
 }
 

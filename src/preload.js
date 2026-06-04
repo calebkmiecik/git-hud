@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('hud', {
     ipcRenderer.removeAllListeners('hud:openSettings');
     ipcRenderer.on('hud:openSettings', () => cb());
   },
+  onAgentEvent: (cb) => {
+    ipcRenderer.removeAllListeners('hud:agentEvent');
+    ipcRenderer.on('hud:agentEvent', (_e, payload) => cb(payload));
+  },
   getPicker: () => ipcRenderer.invoke('hud:getPicker'),
   setEnabled: (repoPath, on) => ipcRenderer.invoke('hud:setEnabled', repoPath, on),
   addRoot: () => ipcRenderer.invoke('hud:addRoot'),
