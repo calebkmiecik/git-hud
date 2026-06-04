@@ -149,23 +149,6 @@ function toggle() {
   if (tray) tray.setContextMenu(buildTrayMenu());
 }
 
-// Write the tiny PowerShell script the Claude Code hooks invoke (via -File, so
-// there's no inline-quoting to mangle). Lives in userData with the port baked in,
-// so it's stable across dev/packaged builds and stays in sync with agentPort.
-function writeNotifyScript() {
-  const file = path.join(dataDir, 'notify.ps1');
-  const content = [
-    'param([string]$Type)',
-    'try {',
-    '  $proj = [uri]::EscapeDataString("$env:CLAUDE_PROJECT_DIR")',
-    `  Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:${cfg.agentPort}/?type=$Type&project=$proj" -Method POST -TimeoutSec 2 | Out-Null`,
-    '} catch {}',
-    '',
-  ].join('\r\n');
-  try { fs.writeFileSync(file, content); } catch (e) { console.error('notify.ps1 write failed:', e.message); }
-  return file;
-}
-
 // Loopback HTTP listener for Claude Code hook pings. A hook POSTs to
 // http://127.0.0.1:<agentPort>/?type=stop|idle|permission&project=<dir>; we
 // forward it to the renderer, which plays the matching sound + toast.
@@ -266,7 +249,6 @@ app.whenReady().then(() => {
   rescan();
   reconcile();
   createTray();
-  writeNotifyScript();
   startAgentListener();
 
   // Picker: rescan and return discovered repos grouped by root + enabled flags + roots.
