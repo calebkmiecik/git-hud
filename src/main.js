@@ -140,7 +140,8 @@ function toggle() {
 app.whenReady().then(() => {
   appDir = app.getAppPath();
   dataDir = getDataDir(app);
-  ensureConfig({ dest: configFile(dataDir), example: exampleFile(appDir), fs });
+  const seedResult = ensureConfig({ dest: configFile(dataDir), example: exampleFile(appDir), fs });
+  if (seedResult === 'failed') console.warn('ensureConfig failed — proceeding with defaults');
   const res = loadConfig(dataDir);
   cfg = res.config; cfgError = res.error;
   state = loadState(dataDir);
@@ -207,6 +208,7 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   for (const m of monitors.values()) m.stop();
+  if (tray) { tray.destroy(); tray = null; }
 });
 
 // Mac convention; harmless on Windows.
