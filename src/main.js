@@ -1,12 +1,15 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, dialog, screen } = require('electron');
 const path = require('node:path');
-const { loadConfig } = require('./config');
+const fs = require('node:fs');
+const { loadConfig, ensureConfig } = require('./config');
+const { dataDir: getDataDir, configFile, exampleFile } = require('./paths');
 const { RepoMonitor } = require('./monitor');
 const { discoverRepos } = require('./discovery');
 const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot } = require('./state');
 
 let win = null;
 let appDir = null;
+let dataDir = null; // writable userData dir for config.json + state.json
 let monitors = new Map(); // repoPath -> RepoMonitor
 let states = new Map();   // repoPath -> latest state
 let groups = [];          // [{ root, repos: [...] }] from last discovery
@@ -95,14 +98,16 @@ function toggle() {
 
 app.whenReady().then(() => {
   appDir = app.getAppPath();
-  const res = loadConfig(appDir);
+  dataDir = getDataDir(app);
+  ensureConfig({ dest: configFile(dataDir), example: exampleFile(appDir), fs });
+  const res = loadConfig(dataDir);
   cfg = res.config; cfgError = res.error;
-  state = loadState(appDir);
+  state = loadState(dataDir);
 
   // First-run migration: seed app-managed roots from config.json's roots.
   if (state.roots.length === 0 && cfg.roots.length > 0) {
     state.roots = [...cfg.roots];
-    saveState(appDir, state);
+    saveState(dataDir, state);
   }
 
   createWindow();
@@ -123,7 +128,7 @@ app.whenReady().then(() => {
     });
     if (!res.canceled && res.filePaths[0]) {
       addRoot(state, res.filePaths[0]);
-      saveState(appDir, state);
+      saveState(dataDir, state);
       rescan();
       reconcile();
     }
@@ -137,7 +142,7 @@ app.whenReady().then(() => {
   // Remove a root folder.
   ipcMain.handle('hud:removeRoot', (_e, rootPath) => {
     removeRoot(state, rootPath);
-    saveState(appDir, state);
+    saveState(dataDir, state);
     rescan();
     reconcile();
     return { groups, enabled: state.enabled, roots: state.roots };
@@ -146,7 +151,7 @@ app.whenReady().then(() => {
   // Toggle a repo on/off, persist, and reconcile monitors.
   ipcMain.handle('hud:setEnabled', (_e, repoPath, on) => {
     setEnabled(state, repoPath, on);
-    saveState(appDir, state);
+    saveState(dataDir, state);
     reconcile();
     return state.enabled;
   });
