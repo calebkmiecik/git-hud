@@ -10,6 +10,8 @@ delete process.env.ELECTRON_RUN_AS_NODE;
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
+const projectRoot = path.join(__dirname, '..');
+
 const watch = process.argv.includes('--watch');
 
 let bin, args;
@@ -17,11 +19,11 @@ if (watch) {
   // electronmon watches main + renderer files and restarts/reloads on change.
   const exe = process.platform === 'win32' ? 'electronmon.cmd' : 'electronmon';
   bin = path.join(__dirname, '..', 'node_modules', '.bin', exe);
-  args = ['.'];
+  args = [projectRoot];
 } else {
   // Under plain Node, require('electron') resolves to the electron exe path.
   bin = require('electron');
-  args = ['.'];
+  args = [projectRoot];
 }
 
 const child = spawn(bin, args, {
