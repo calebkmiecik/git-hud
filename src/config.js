@@ -23,10 +23,10 @@ function applyDefaults(raw) {
   };
 }
 
-// appDir is app.getAppPath() — the project root under `electron .` (dev/unpacked only).
-// Loads config.json from the app directory. Returns { config, error }.
-function loadConfig(appDir) {
-  const file = path.join(appDir, 'config.json');
+// dir is the writable userData directory (app.getPath('userData')).
+// Loads config.json from that directory. Returns { config, error }.
+function loadConfig(dir) {
+  const file = path.join(dir, 'config.json');
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     return { config: applyDefaults(raw), error: null };
@@ -44,6 +44,7 @@ function loadConfig(appDir) {
 function ensureConfig({ dest, example, fs: fsImpl = fs }) {
   try {
     if (fsImpl.existsSync(dest)) return 'exists';
+    fsImpl.mkdirSync(path.dirname(dest), { recursive: true });
     fsImpl.copyFileSync(example, dest);
     return 'created';
   } catch {

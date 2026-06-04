@@ -29,12 +29,15 @@ test('applyDefaults coerces missing roots to empty array', () => {
 
 test('ensureConfig copies the example when dest is missing', () => {
   const calls = [];
+  const mkdirs = [];
   const fakeFs = {
     existsSync: () => false,
+    mkdirSync: (d, opts) => mkdirs.push([d, opts]),
     copyFileSync: (a, b) => calls.push([a, b]),
   };
   const r = ensureConfig({ dest: '/ud/config.json', example: '/app/config.example.json', fs: fakeFs });
   assert.equal(r, 'created');
+  assert.deepEqual(mkdirs, [['/ud', { recursive: true }]]);
   assert.deepEqual(calls, [['/app/config.example.json', '/ud/config.json']]);
 });
 
@@ -47,7 +50,11 @@ test('ensureConfig no-ops when dest already exists', () => {
 });
 
 test('ensureConfig returns "failed" without throwing on copy error', () => {
-  const fakeFs = { existsSync: () => false, copyFileSync: () => { throw new Error('EACCES'); } };
+  const fakeFs = {
+    existsSync: () => false,
+    mkdirSync: () => {},
+    copyFileSync: () => { throw new Error('EACCES'); },
+  };
   const r = ensureConfig({ dest: '/ud/config.json', example: '/app/config.example.json', fs: fakeFs });
   assert.equal(r, 'failed');
 });
