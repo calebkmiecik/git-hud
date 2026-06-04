@@ -242,7 +242,16 @@ function endDrag() {
   // A click (no real movement) on a row, while the list is showing, drills in.
   if (!moved && row && !listEl.hidden) {
     const repo = reposByPath.get(row.dataset.path);
-    if (repo) showDetail(repo);
+    if (repo) {
+      // A notifying row jumps straight to its VS Code window (focuses the open
+      // folder) and clears the highlight; otherwise it drills into the detail view.
+      if (attention.has(repo.path)) {
+        window.hud.openExternal(repo.path, 'editor');
+        clearAttention(repo.path);
+      } else {
+        showDetail(repo);
+      }
+    }
   }
 }
 hudEl.addEventListener('pointerup', endDrag);

@@ -85,12 +85,12 @@
 
   /* agent-event row highlight: a pulsing repo row + bold name */
   .row.att-turn, .row.att-attn { border-radius: 6px; padding: 3px 4px; margin: 0 -4px; }
-  .row.att-turn { animation: rowpulse 1.5s ease-in-out infinite; }
-  .row.att-attn { animation: rowpulseAttn 1.1s ease-in-out infinite; }
-  .row.att-turn .name, .row.att-attn .name { color: var(--fg); font-weight: 700; }
+  .row.att-turn { animation: rowpulse 2.8s ease-in-out infinite; }
+  .row.att-attn { animation: rowpulseAttn 2.3s ease-in-out infinite; }
+  .row.att-turn .name, .row.att-attn .name { color: var(--fg); font-weight: 600; }
   .row.att-attn .name { color: var(--amber); }
-  @keyframes rowpulse { 0%,100% { background: rgba(127,178,255,0.04); } 50% { background: rgba(127,178,255,0.20); } }
-  @keyframes rowpulseAttn { 0%,100% { background: rgba(255,184,77,0.05); } 50% { background: rgba(255,184,77,0.24); } }
+  @keyframes rowpulse { 0%,100% { background: rgba(127,178,255,0.015); } 50% { background: rgba(127,178,255,0.10); } }
+  @keyframes rowpulseAttn { 0%,100% { background: rgba(255,184,77,0.02); } 50% { background: rgba(255,184,77,0.14); } }
 
   #hud.detailing #gear { display: none; }
   #detail { -webkit-app-region: no-drag; padding-right: 4px; animation: fade .18s ease; }
