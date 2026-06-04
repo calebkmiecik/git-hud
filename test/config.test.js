@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { applyDefaults } = require('../src/config');
+const { applyDefaults, ensureConfig } = require('../src/config');
 
 test('applyDefaults fills missing fields', () => {
   const c = applyDefaults({ roots: ['/a'] });
@@ -25,4 +25,36 @@ test('applyDefaults preserves provided values', () => {
 test('applyDefaults coerces missing roots to empty array', () => {
   const c = applyDefaults({});
   assert.deepEqual(c.roots, []);
+});
+
+test('ensureConfig copies the example when dest is missing', () => {
+  const calls = [];
+  const mkdirs = [];
+  const fakeFs = {
+    existsSync: () => false,
+    mkdirSync: (d, opts) => mkdirs.push([d, opts]),
+    copyFileSync: (a, b) => calls.push([a, b]),
+  };
+  const r = ensureConfig({ dest: '/ud/config.json', example: '/app/config.example.json', fs: fakeFs });
+  assert.equal(r, 'created');
+  assert.deepEqual(mkdirs, [['/ud', { recursive: true }]]);
+  assert.deepEqual(calls, [['/app/config.example.json', '/ud/config.json']]);
+});
+
+test('ensureConfig no-ops when dest already exists', () => {
+  let copied = false;
+  const fakeFs = { existsSync: () => true, copyFileSync: () => { copied = true; } };
+  const r = ensureConfig({ dest: '/ud/config.json', example: '/app/config.example.json', fs: fakeFs });
+  assert.equal(r, 'exists');
+  assert.equal(copied, false);
+});
+
+test('ensureConfig returns "failed" without throwing on copy error', () => {
+  const fakeFs = {
+    existsSync: () => false,
+    mkdirSync: () => {},
+    copyFileSync: () => { throw new Error('EACCES'); },
+  };
+  const r = ensureConfig({ dest: '/ud/config.json', example: '/app/config.example.json', fs: fakeFs });
+  assert.equal(r, 'failed');
 });

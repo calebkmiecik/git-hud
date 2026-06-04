@@ -110,14 +110,21 @@ function endDrag(e) {
 hudEl.addEventListener('pointerup', endDrag);
 hudEl.addEventListener('pointercancel', endDrag);
 
-gearEl.addEventListener('click', async () => {
-  const opening = pickerEl.hidden;
-  if (opening) {
-    await renderPicker();
-    pickerEl.hidden = false;
-    listEl.hidden = true;
-  } else {
-    pickerEl.hidden = true;
-    listEl.hidden = false;
-  }
+async function openPicker() {
+  if (!pickerEl.hidden) return; // already open or opening
+  pickerEl.hidden = false;      // claim synchronously to block re-entry
+  listEl.hidden = true;
+  await renderPicker();
+}
+
+function closePicker() {
+  pickerEl.hidden = true;
+  listEl.hidden = false;
+}
+
+gearEl.addEventListener('click', () => {
+  if (pickerEl.hidden) openPicker();
+  else closePicker();
 });
+
+window.hud.onOpenSettings(() => openPicker());

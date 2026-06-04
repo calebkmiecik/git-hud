@@ -1,12 +1,16 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, dialog, screen } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, dialog, screen, Tray, Menu } = require('electron');
 const path = require('node:path');
-const { loadConfig } = require('./config');
+const fs = require('node:fs');
+const { loadConfig, ensureConfig } = require('./config');
+const { dataDir: getDataDir, configFile, exampleFile } = require('./paths');
 const { RepoMonitor } = require('./monitor');
 const { discoverRepos } = require('./discovery');
 const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot } = require('./state');
 
 let win = null;
+let tray = null;
 let appDir = null;
+let dataDir = null; // writable userData dir for config.json + state.json
 let monitors = new Map(); // repoPath -> RepoMonitor
 let states = new Map();   // repoPath -> latest state
 let groups = [];          // [{ root, repos: [...] }] from last discovery
@@ -87,27 +91,71 @@ function reconcile() {
   pushUpdate();
 }
 
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    { label: win && win.isVisible() ? 'Hide' : 'Show', click: toggle },
+    {
+      label: 'Open settings…',
+      click: () => {
+        if (!win) return;
+        win.show();
+        win.setAlwaysOnTop(true, 'screen-saver');
+        win.webContents.send('hud:openSettings');
+        if (tray) tray.setContextMenu(buildTrayMenu());
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Start at login',
+      type: 'checkbox',
+      checked: app.getLoginItemSettings().openAtLogin,
+      click: (item) => {
+        try { app.setLoginItemSettings({ openAtLogin: item.checked }); }
+        catch (e) { console.error('setLoginItemSettings failed:', e.message); }
+      },
+    },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() },
+  ]);
+}
+
+function createTray() {
+  try {
+    tray = new Tray(path.join(appDir, 'icon.ico'));
+    tray.setToolTip('git-hud');
+    tray.setContextMenu(buildTrayMenu());
+    tray.on('click', toggle);
+  } catch (e) {
+    console.error('Tray init failed; continuing without tray:', e.message);
+  }
+}
+
 function toggle() {
   if (!win) return;
   if (win.isVisible()) win.hide();
   else { win.show(); win.setAlwaysOnTop(true, 'screen-saver'); }
+  if (tray) tray.setContextMenu(buildTrayMenu());
 }
 
 app.whenReady().then(() => {
   appDir = app.getAppPath();
-  const res = loadConfig(appDir);
+  dataDir = getDataDir(app);
+  const seedResult = ensureConfig({ dest: configFile(dataDir), example: exampleFile(appDir), fs });
+  if (seedResult === 'failed') console.warn('ensureConfig failed — proceeding with defaults');
+  const res = loadConfig(dataDir);
   cfg = res.config; cfgError = res.error;
-  state = loadState(appDir);
+  state = loadState(dataDir);
 
   // First-run migration: seed app-managed roots from config.json's roots.
   if (state.roots.length === 0 && cfg.roots.length > 0) {
     state.roots = [...cfg.roots];
-    saveState(appDir, state);
+    saveState(dataDir, state);
   }
 
   createWindow();
   rescan();
   reconcile();
+  createTray();
 
   // Picker: rescan and return discovered repos grouped by root + enabled flags + roots.
   ipcMain.handle('hud:getPicker', () => {
@@ -123,7 +171,7 @@ app.whenReady().then(() => {
     });
     if (!res.canceled && res.filePaths[0]) {
       addRoot(state, res.filePaths[0]);
-      saveState(appDir, state);
+      saveState(dataDir, state);
       rescan();
       reconcile();
     }
@@ -137,7 +185,7 @@ app.whenReady().then(() => {
   // Remove a root folder.
   ipcMain.handle('hud:removeRoot', (_e, rootPath) => {
     removeRoot(state, rootPath);
-    saveState(appDir, state);
+    saveState(dataDir, state);
     rescan();
     reconcile();
     return { groups, enabled: state.enabled, roots: state.roots };
@@ -146,7 +194,7 @@ app.whenReady().then(() => {
   // Toggle a repo on/off, persist, and reconcile monitors.
   ipcMain.handle('hud:setEnabled', (_e, repoPath, on) => {
     setEnabled(state, repoPath, on);
-    saveState(appDir, state);
+    saveState(dataDir, state);
     reconcile();
     return state.enabled;
   });
@@ -160,6 +208,7 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   for (const m of monitors.values()) m.stop();
+  if (tray) { tray.destroy(); tray = null; }
 });
 
 // Mac convention; harmless on Windows.

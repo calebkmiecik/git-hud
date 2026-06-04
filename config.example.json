@@ -1,7 +1,5 @@
 {
-  "roots": [
-    "C:\\Users\\Caleb\\Documents\\projects"
-  ],
+  "roots": [],
   "hotkey": "Control+Alt+G",
   "pollIntervalMs": 20000,
   "startVisible": false,
