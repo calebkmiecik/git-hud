@@ -55,7 +55,7 @@ function showDetail(repo) {
   // isConnected guard skips the update if the user navigated away first.
   const infoEl = detailEl.querySelector('.dinfo');
   window.hud.getDetail(repo.path)
-    .then(detail => { if (infoEl.isConnected) infoEl.innerHTML = window.branchInfoHtml(detail, repo); })
+    .then(detail => { if (infoEl.isConnected) infoEl.innerHTML = window.branchInfoHtml(detail); })
     .catch(() => { if (infoEl.isConnected) infoEl.innerHTML = '<span class="dim">couldn\'t load branch info</span>'; });
 
   const statusEl = detailEl.querySelector('.dstatus');

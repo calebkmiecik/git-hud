@@ -49,40 +49,31 @@
     return `<div class="dinfo-row${cls}"${title}><span class="k">${k}</span><span class="v">${v}</span></div>`;
   }
 
-  // "X ahead · Y behind" / "up to date" / "even", or null when counts are unknown.
-  function aheadBehindWords(ahead, behind, evenWord) {
+  // "X ahead · Y behind" / "even", or null when counts are unknown.
+  function aheadBehindWords(ahead, behind) {
     if (ahead == null || behind == null) return null;
-    if (!ahead && !behind) return evenWord;
+    if (!ahead && !behind) return 'even';
     const parts = [];
     if (ahead) parts.push(`${ahead} ahead`);
     if (behind) parts.push(`${behind} behind`);
     return parts.join(' · ');
   }
 
-  function syncText(repo, detail) {
-    const words = aheadBehindWords(repo && repo.ahead, repo && repo.behind, 'up to date');
-    if (words == null) return `<span class="dim">${detail.upstream ? '—' : 'no upstream'}</span>`;
-    return (!repo.ahead && !repo.behind) ? `<span class="dim">${words}</span>` : esc(words);
+  function divergedText(detail) {
+    const words = aheadBehindWords(detail.baseAhead, detail.baseBehind);
+    if (words == null) return '<span class="dim">—</span>';
+    return words === 'even' ? '<span class="dim">even</span>' : esc(words);
   }
 
-  function divergeText(detail) {
-    const words = aheadBehindWords(detail.baseAhead, detail.baseBehind, 'even');
-    const base = esc(detail.base);
-    if (words == null) return `<span class="dim">${base}</span>`;
-    const body = (!detail.baseAhead && !detail.baseBehind) ? `<span class="dim">${esc(words)}</span>` : esc(words);
-    return `${body} <span class="dim">· ${base}</span>`;
-  }
-
-  function branchInfoHtml(detail, repo) {
+  function branchInfoHtml(detail) {
     if (detail && detail.error) return '<span class="dim">couldn\'t load branch info</span>';
     detail = detail || {};
-    const rows = [
-      infoRow('Upstream', detail.upstream ? esc(detail.upstream) : '<span class="dim">none</span>'),
-      infoRow('Sync', syncText(repo, detail)),
-    ];
+    const rows = [];
     if (detail.base) {
-      const full = `${aheadBehindWords(detail.baseAhead, detail.baseBehind, 'even')} vs ${detail.base}`;
-      rows.push(infoRow('Diverged', divergeText(detail), { title: full }));
+      rows.push(infoRow('Base', `<span class="dim">${esc(detail.base)}</span>`, { title: detail.base }));
+      rows.push(infoRow('Diverged', divergedText(detail)));
+    } else {
+      rows.push(infoRow('Base', '<span class="dim">no remote default branch</span>'));
     }
     if (detail.stash > 0) rows.push(infoRow('Stashes', String(detail.stash)));
     if (detail.inProgress) rows.push(infoRow('In progress', esc(detail.inProgress), { warn: true }));
