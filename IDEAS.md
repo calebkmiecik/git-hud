@@ -14,6 +14,12 @@ to — just a parking lot.
   "behind" live. Off by default because of network cost.
 - **Launch on Windows startup** — a "start with Windows" toggle for an
   always-on overlay.
+- **Persist window position after drag** — you can drag the HUD anywhere, but
+  `state.json` only stores `enabled` + `roots`. On restart it snaps back to the
+  configured corner. Save the dragged x/y and reuse it on launch (fall back to
+  the config corner when unset).
+- **Config / state hot-reload** — `fs.watch` `config.json` / `state.json` so
+  edits apply live instead of requiring a restart.
 
 ### Nice to have
 - **Click a repo → open it** in VS Code / terminal / file explorer. Also gives
