@@ -43,6 +43,9 @@
   #hud:hover #list { padding-right: 16px; }
 
   .row { display: flex; align-items: center; gap: 9px; padding: 3px 0; }
+  .row[data-path] { cursor: pointer; border-radius: 6px; padding: 3px 4px; margin: 0 -4px;
+    transition: background .12s ease; }
+  .row[data-path]:hover { background: rgba(255,255,255,0.05); }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
   .clean { background: var(--green); }
   .dirty { background: var(--amber); }
@@ -79,6 +82,38 @@
     border-top: 1px solid var(--line); border-radius: 0; cursor: pointer;
     font: inherit; font-size: 11px; text-align: left; transition: color .12s ease; }
   #addRoot:hover { color: var(--accent); }
+
+  #hud.detailing #gear { display: none; }
+  #detail { -webkit-app-region: no-drag; padding-right: 4px; animation: fade .18s ease; }
+  #detail .dhead { display: flex; align-items: center; gap: 8px; padding-bottom: 7px;
+    margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+  #detail .back { -webkit-app-region: no-drag; background: none; border: none; color: var(--muted);
+    cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px 0 0; transition: color .12s ease; }
+  #detail .back:hover { color: var(--fg); }
+  #detail .dname { color: var(--fg); font-weight: 700; font-size: 13px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #detail .dmeta { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
+  #detail .dinfo { display: flex; flex-direction: column; gap: 4px; margin-bottom: 13px; }
+  #detail .dinfo-row { display: flex; align-items: baseline; gap: 8px; }
+  #detail .dinfo-row .k { color: var(--dim); font-size: 9.5px; text-transform: uppercase;
+    letter-spacing: .8px; flex: 0 0 66px; }
+  #detail .dinfo-row .v { color: var(--fg); flex: 1 1 auto; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #detail .dinfo-row.warn .v { color: var(--amber); }
+  #detail .dinfo .dim { color: var(--dim); }
+  #detail .dbranch { color: var(--fg); font-weight: 600; flex: 1 1 auto; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #detail .dactions { display: flex; gap: 3px; }
+  #detail .act { -webkit-app-region: no-drag; flex: 1 1 0; display: flex; flex-direction: column;
+    align-items: center; gap: 5px; background: none; border: none; border-radius: 8px;
+    color: var(--muted); cursor: pointer; font: inherit; padding: 9px 2px;
+    transition: background .12s ease, color .12s ease; }
+  #detail .act:hover { background: rgba(255,255,255,0.06); color: var(--fg); }
+  #detail .act .ico { display: flex; align-items: center; justify-content: center; height: 18px; }
+  #detail .act .ico svg { width: 16px; height: 16px; display: block; }
+  #detail .act .glyph { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: 17px; line-height: 1; }
+  #detail .act .lbl { font-size: 10px; letter-spacing: .2px; }
+  #detail .dstatus { color: var(--amber); font-size: 11px; margin-top: 9px; text-align: center; }
 </style>
 </head>
 <body>
@@ -86,7 +121,9 @@
     <button id="gear" title="Choose repos">&#9881;</button>
     <div id="list"></div>
     <div id="picker" hidden></div>
+    <div id="detail" hidden></div>
   </div>
+  <script src="detail.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
