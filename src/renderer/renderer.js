@@ -51,20 +51,26 @@ function showDetail(repo) {
   detailEl.innerHTML = window.detailHtml(repo);
   detailEl.querySelector('.back').addEventListener('click', showList);
 
-  // Push button (only present when the branch is purely ahead of its upstream).
-  const pushBtn = detailEl.querySelector('.pushbtn');
-  if (pushBtn) {
-    pushBtn.addEventListener('click', async () => {
+  // Click-to-push: the ↑N ahead indicator (present only when purely ahead).
+  const pushArrow = detailEl.querySelector('.pusharrow');
+  if (pushArrow) {
+    let busy = false;
+    pushArrow.addEventListener('click', async () => {
+      if (busy) return;
+      busy = true;
       statusEl.hidden = true;
-      const label = pushBtn.textContent;
-      pushBtn.disabled = true;
-      pushBtn.textContent = 'Pushing…';
+      pushArrow.classList.add('pushing');
       const res = await window.hud.push(repo.path);
+      pushArrow.classList.remove('pushing');
       if (res && res.ok) {
-        pushBtn.textContent = 'Pushed ✓';
+        pushArrow.classList.add('pushed');
+        pushArrow.textContent = '✓';
+        setTimeout(() => { if (pushArrow.isConnected) pushArrow.classList.add('done'); }, 1000);
+        // stays busy — nothing left to push
       } else {
-        pushBtn.disabled = false;
-        pushBtn.textContent = label;
+        busy = false;
+        pushArrow.classList.add('failed');
+        setTimeout(() => pushArrow.classList.remove('failed'), 450);
         statusEl.textContent = 'Push failed: ' + ((res && res.error) || 'unknown');
         statusEl.hidden = false;
       }

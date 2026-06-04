@@ -21,12 +21,16 @@
   const TERMINAL_GLYPH = '<span class="glyph"></span>';
   const EXPLORER_GLYPH = '<span class="glyph"></span>';
 
-  // Push button only when the branch is purely ahead of its upstream
-  // (ahead > 0, behind 0/none) — the one safe, one-click push case.
-  function pushButtonHtml(repo) {
+  // The ahead/behind indicator in the header. When the branch is purely ahead of
+  // its upstream (ahead > 0, behind 0/none) the ↑N becomes a click-to-push control;
+  // otherwise it's the plain read-only indicator.
+  function aheadIndicator(repo) {
     const ahead = repo.ahead, behind = repo.behind;
-    if (!ahead || behind) return '';
-    return `<div class="dpush"><button class="pushbtn">↑ Push ${ahead} commit${ahead === 1 ? '' : 's'}</button></div>`;
+    if (ahead && !behind) {
+      return `<button class="ab pusharrow" title="Push ${ahead} commit${ahead === 1 ? '' : 's'} to upstream">`
+        + `<span class="pa-arrow">↑</span><span class="pa-num">${ahead}</span></button>`;
+    }
+    return `<span class="ab">${esc(abText(repo))}</span>`;
   }
 
   function detailHtml(repo) {
@@ -37,10 +41,9 @@
       <div class="dmeta">
         <span class="dot ${repo.dirty ? 'dirty' : 'clean'}"></span>
         <span class="dbranch">${esc(repo.branch ?? '—')}</span>
-        <span class="ab">${esc(abText(repo))}</span>
+        ${aheadIndicator(repo)}
       </div>
       <div class="dinfo"><span class="dim">loading…</span></div>
-      ${pushButtonHtml(repo)}
       <div class="dactions">
         <button class="act" data-act="editor" title="Open in VS Code"><span class="ico">${VSCODE_SVG}</span><span class="lbl">Code</span></button>
         <button class="act" data-act="terminal" title="Open a terminal here"><span class="ico">${TERMINAL_GLYPH}</span><span class="lbl">Terminal</span></button>
