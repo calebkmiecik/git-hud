@@ -111,9 +111,10 @@ hudEl.addEventListener('pointerup', endDrag);
 hudEl.addEventListener('pointercancel', endDrag);
 
 async function openPicker() {
-  await renderPicker();
-  pickerEl.hidden = false;
+  if (!pickerEl.hidden) return; // already open or opening
+  pickerEl.hidden = false;      // claim synchronously to block re-entry
   listEl.hidden = true;
+  await renderPicker();
 }
 
 function closePicker() {
