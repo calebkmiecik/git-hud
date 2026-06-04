@@ -83,13 +83,14 @@
     font: inherit; font-size: 11px; text-align: left; transition: color .12s ease; }
   #addRoot:hover { color: var(--accent); }
 
-  #toast { position: fixed; left: 14px; right: 14px; bottom: 14px; z-index: 20; pointer-events: none;
-    background: rgba(18,22,30,0.96); border: 1px solid var(--line); border-radius: 9px;
-    padding: 7px 10px; font-size: 11px; color: var(--fg); text-align: center;
-    opacity: 0; transform: translateY(8px); transition: opacity .2s ease, transform .2s ease;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.5); backdrop-filter: blur(6px); }
-  #toast.show { opacity: 1; transform: translateY(0); }
-  #toast.attn { border-color: rgba(255,184,77,0.55); color: var(--amber); }
+  /* agent-event row highlight: a pulsing repo row + bold name */
+  .row.att-turn, .row.att-attn { border-radius: 6px; padding: 3px 4px; margin: 0 -4px; }
+  .row.att-turn { animation: rowpulse 1.5s ease-in-out infinite; }
+  .row.att-attn { animation: rowpulseAttn 1.1s ease-in-out infinite; }
+  .row.att-turn .name, .row.att-attn .name { color: var(--fg); font-weight: 700; }
+  .row.att-attn .name { color: var(--amber); }
+  @keyframes rowpulse { 0%,100% { background: rgba(127,178,255,0.04); } 50% { background: rgba(127,178,255,0.20); } }
+  @keyframes rowpulseAttn { 0%,100% { background: rgba(255,184,77,0.05); } 50% { background: rgba(255,184,77,0.24); } }
 
   #hud.detailing #gear { display: none; }
   #detail { -webkit-app-region: no-drag; padding-right: 4px; animation: fade .18s ease; }
@@ -148,7 +149,6 @@
     <div id="picker" hidden></div>
     <div id="detail" hidden></div>
   </div>
-  <div id="toast"></div>
   <script src="detail.js"></script>
   <script src="renderer.js"></script>
 </body>
