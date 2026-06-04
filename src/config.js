@@ -39,4 +39,16 @@ function loadConfig(appDir) {
   }
 }
 
-module.exports = { applyDefaults, loadConfig, DEFAULTS };
+// Seeds dest from the bundled example when dest is missing. Never throws.
+// Returns 'created' | 'exists' | 'failed'. fs is injected for testability.
+function ensureConfig({ dest, example, fs: fsImpl = fs }) {
+  try {
+    if (fsImpl.existsSync(dest)) return 'exists';
+    fsImpl.copyFileSync(example, dest);
+    return 'created';
+  } catch {
+    return 'failed';
+  }
+}
+
+module.exports = { applyDefaults, loadConfig, ensureConfig, DEFAULTS };
