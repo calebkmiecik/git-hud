@@ -42,20 +42,35 @@
   }
 
   // ---- branch-info block (filled in after the async hud.getDetail fetch) ----
-  function infoRow(k, v, warn) {
-    return `<div class="dinfo-row${warn ? ' warn' : ''}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  function infoRow(k, v, opts) {
+    opts = opts || {};
+    const cls = opts.warn ? ' warn' : '';
+    const title = opts.title ? ` title="${esc(opts.title)}"` : '';
+    return `<div class="dinfo-row${cls}"${title}><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  }
+
+  // "X ahead · Y behind" / "up to date" / "even", or null when counts are unknown.
+  function aheadBehindWords(ahead, behind, evenWord) {
+    if (ahead == null || behind == null) return null;
+    if (!ahead && !behind) return evenWord;
+    const parts = [];
+    if (ahead) parts.push(`${ahead} ahead`);
+    if (behind) parts.push(`${behind} behind`);
+    return parts.join(' · ');
   }
 
   function syncText(repo, detail) {
-    const a = repo && repo.ahead, b = repo && repo.behind;
-    if (a == null || b == null) {
-      return `<span class="dim">${detail.upstream ? '—' : 'no upstream'}</span>`;
-    }
-    if (!a && !b) return '<span class="dim">up to date</span>';
-    const parts = [];
-    if (a) parts.push(`${a} ahead`);
-    if (b) parts.push(`${b} behind`);
-    return esc(parts.join(' · '));
+    const words = aheadBehindWords(repo && repo.ahead, repo && repo.behind, 'up to date');
+    if (words == null) return `<span class="dim">${detail.upstream ? '—' : 'no upstream'}</span>`;
+    return (!repo.ahead && !repo.behind) ? `<span class="dim">${words}</span>` : esc(words);
+  }
+
+  function divergeText(detail) {
+    const words = aheadBehindWords(detail.baseAhead, detail.baseBehind, 'even');
+    const base = esc(detail.base);
+    if (words == null) return `<span class="dim">${base}</span>`;
+    const body = (!detail.baseAhead && !detail.baseBehind) ? `<span class="dim">${esc(words)}</span>` : esc(words);
+    return `${body} <span class="dim">· ${base}</span>`;
   }
 
   function branchInfoHtml(detail, repo) {
@@ -65,9 +80,13 @@
       infoRow('Upstream', detail.upstream ? esc(detail.upstream) : '<span class="dim">none</span>'),
       infoRow('Sync', syncText(repo, detail)),
     ];
+    if (detail.base) {
+      const full = `${aheadBehindWords(detail.baseAhead, detail.baseBehind, 'even')} vs ${detail.base}`;
+      rows.push(infoRow('Diverged', divergeText(detail), { title: full }));
+    }
     if (detail.stash > 0) rows.push(infoRow('Stashes', String(detail.stash)));
-    if (detail.inProgress) rows.push(infoRow('In progress', esc(detail.inProgress), true));
-    if (detail.conflicts > 0) rows.push(infoRow('Conflicts', String(detail.conflicts), true));
+    if (detail.inProgress) rows.push(infoRow('In progress', esc(detail.inProgress), { warn: true }));
+    if (detail.conflicts > 0) rows.push(infoRow('Conflicts', String(detail.conflicts), { warn: true }));
     return rows.join('');
   }
 

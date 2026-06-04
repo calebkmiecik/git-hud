@@ -2,6 +2,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const fs = require('node:fs');
 const path = require('node:path');
+const { parseAheadBehind } = require('./git');
 const execFileAsync = promisify(execFile);
 
 // ---- pure helpers ----
@@ -31,12 +32,25 @@ async function git(repoPath, args) {
 // On-demand richer git state for the detail view's branch-info section.
 // Never throws; fields fall back to safe defaults on error.
 async function getRepoDetail(repoPath) {
-  const out = { upstream: null, stash: 0, conflicts: 0, inProgress: null, error: null };
+  const out = { upstream: null, stash: 0, conflicts: 0, inProgress: null,
+                base: null, baseAhead: null, baseBehind: null, error: null };
   try {
     try {
       const u = (await git(repoPath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'])).trim();
       out.upstream = u || null;
     } catch { /* no upstream configured */ }
+
+    // Divergence from the remote default branch (origin/HEAD), unless we're on it.
+    try {
+      const base = (await git(repoPath, ['rev-parse', '--abbrev-ref', 'origin/HEAD'])).trim();
+      if (base && base !== 'origin/HEAD') {
+        const cur = (await git(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+        if (cur !== base.replace(/^origin\//, '')) {
+          const ab = parseAheadBehind(await git(repoPath, ['rev-list', '--count', '--left-right', `${base}...HEAD`]));
+          if (ab) { out.base = base; out.baseAhead = ab.ahead; out.baseBehind = ab.behind; }
+        }
+      }
+    } catch { /* no remote default / detached */ }
 
     try { out.stash = countLines(await git(repoPath, ['stash', 'list'])); } catch { /* none */ }
     try { out.conflicts = countLines(await git(repoPath, ['diff', '--name-only', '--diff-filter=U'])); } catch { /* none */ }
