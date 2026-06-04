@@ -95,12 +95,17 @@
   #detail .dmeta { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
   #detail .dbranch { color: var(--fg); font-weight: 600; flex: 1 1 auto; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
-  #detail .dactions { display: flex; flex-wrap: wrap; gap: 6px; }
-  #detail .act { -webkit-app-region: no-drag; flex: 1 1 calc(50% - 3px); background: rgba(255,255,255,0.05);
-    color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 8px;
-    cursor: pointer; font: inherit; font-size: 11px; transition: background .12s ease, border-color .12s ease; }
-  #detail .act:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.18); }
-  #detail .dstatus { color: var(--amber); font-size: 11px; margin-top: 9px; }
+  #detail .dactions { display: flex; gap: 3px; }
+  #detail .act { -webkit-app-region: no-drag; flex: 1 1 0; display: flex; flex-direction: column;
+    align-items: center; gap: 5px; background: none; border: none; border-radius: 8px;
+    color: var(--muted); cursor: pointer; font: inherit; padding: 9px 2px;
+    transition: background .12s ease, color .12s ease; }
+  #detail .act:hover { background: rgba(255,255,255,0.06); color: var(--fg); }
+  #detail .act .ico { display: flex; align-items: center; justify-content: center; height: 18px; }
+  #detail .act .ico svg { width: 16px; height: 16px; display: block; }
+  #detail .act .glyph { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: 17px; line-height: 1; }
+  #detail .act .lbl { font-size: 10px; letter-spacing: .2px; }
+  #detail .dstatus { color: var(--amber); font-size: 11px; margin-top: 9px; text-align: center; }
 </style>
 </head>
 <body>
