@@ -31,6 +31,7 @@
         <span class="dbranch">${esc(repo.branch ?? '—')}</span>
         <span class="ab">${esc(abText(repo))}</span>
       </div>
+      <div class="dinfo"><span class="dim">loading…</span></div>
       <div class="dactions">
         <button class="act" data-act="editor" title="Open in VS Code"><span class="ico">${VSCODE_SVG}</span><span class="lbl">Code</span></button>
         <button class="act" data-act="terminal" title="Open a terminal here"><span class="ico">${TERMINAL_GLYPH}</span><span class="lbl">Terminal</span></button>
@@ -40,5 +41,36 @@
       <div class="dstatus" hidden></div>`;
   }
 
+  // ---- branch-info block (filled in after the async hud.getDetail fetch) ----
+  function infoRow(k, v, warn) {
+    return `<div class="dinfo-row${warn ? ' warn' : ''}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  }
+
+  function syncText(repo, detail) {
+    const a = repo && repo.ahead, b = repo && repo.behind;
+    if (a == null || b == null) {
+      return `<span class="dim">${detail.upstream ? '—' : 'no upstream'}</span>`;
+    }
+    if (!a && !b) return '<span class="dim">up to date</span>';
+    const parts = [];
+    if (a) parts.push(`${a} ahead`);
+    if (b) parts.push(`${b} behind`);
+    return esc(parts.join(' · '));
+  }
+
+  function branchInfoHtml(detail, repo) {
+    if (detail && detail.error) return '<span class="dim">couldn\'t load branch info</span>';
+    detail = detail || {};
+    const rows = [
+      infoRow('Upstream', detail.upstream ? esc(detail.upstream) : '<span class="dim">none</span>'),
+      infoRow('Sync', syncText(repo, detail)),
+    ];
+    if (detail.stash > 0) rows.push(infoRow('Stashes', String(detail.stash)));
+    if (detail.inProgress) rows.push(infoRow('In progress', esc(detail.inProgress), true));
+    if (detail.conflicts > 0) rows.push(infoRow('Conflicts', String(detail.conflicts), true));
+    return rows.join('');
+  }
+
   window.detailHtml = detailHtml;
+  window.branchInfoHtml = branchInfoHtml;
 })();

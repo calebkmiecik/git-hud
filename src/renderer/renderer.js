@@ -50,6 +50,14 @@ function showList() {
 function showDetail(repo) {
   detailEl.innerHTML = window.detailHtml(repo);
   detailEl.querySelector('.back').addEventListener('click', showList);
+
+  // Fill the branch-info block once the on-demand git fetch resolves. The
+  // isConnected guard skips the update if the user navigated away first.
+  const infoEl = detailEl.querySelector('.dinfo');
+  window.hud.getDetail(repo.path)
+    .then(detail => { if (infoEl.isConnected) infoEl.innerHTML = window.branchInfoHtml(detail, repo); })
+    .catch(() => { if (infoEl.isConnected) infoEl.innerHTML = '<span class="dim">couldn\'t load branch info</span>'; });
+
   const statusEl = detailEl.querySelector('.dstatus');
   detailEl.querySelectorAll('.act').forEach(btn => {
     btn.addEventListener('click', async () => {

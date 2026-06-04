@@ -93,6 +93,14 @@
   #detail .dname { color: var(--fg); font-weight: 700; font-size: 13px; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
   #detail .dmeta { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
+  #detail .dinfo { display: flex; flex-direction: column; gap: 4px; margin-bottom: 13px; }
+  #detail .dinfo-row { display: flex; align-items: baseline; gap: 8px; }
+  #detail .dinfo-row .k { color: var(--dim); font-size: 9.5px; text-transform: uppercase;
+    letter-spacing: .8px; flex: 0 0 66px; }
+  #detail .dinfo-row .v { color: var(--fg); flex: 1 1 auto; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #detail .dinfo-row.warn .v { color: var(--amber); }
+  #detail .dinfo .dim { color: var(--dim); }
   #detail .dbranch { color: var(--fg); font-weight: 600; flex: 1 1 auto; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
   #detail .dactions { display: flex; gap: 3px; }
