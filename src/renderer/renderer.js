@@ -1,7 +1,10 @@
 const hudEl = document.getElementById('hud');
 const listEl = document.getElementById('list');
 const pickerEl = document.getElementById('picker');
+const detailEl = document.getElementById('detail');
 const gearEl = document.getElementById('gear');
+
+let reposByPath = new Map(); // path -> latest repo state, for opening the detail view
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
@@ -18,7 +21,7 @@ function abText(r) {
 function rowHtml(r) {
   if (r.loading) return `<div class="row"><span class="name">${esc(r.name)}</span><span class="loading">…</span></div>`;
   if (r.error) return `<div class="row"><span class="dot dirty"></span><span class="name">${esc(r.name)}</span><span class="err">${esc(r.error)}</span></div>`;
-  return `<div class="row">
+  return `<div class="row" data-path="${esc(r.path)}">
     <span class="dot ${r.dirty ? 'dirty' : 'clean'}"></span>
     <span class="name">${esc(r.name)}</span>
     <span class="branch">${esc(r.branch)}</span>
@@ -27,12 +30,44 @@ function rowHtml(r) {
 }
 
 window.hud.onUpdate(({ repos, error }) => {
+  reposByPath = new Map(repos.map(r => [r.path, r]));
   const banner = error ? `<div class="banner">${esc(error)}</div>` : '';
   const rows = repos.length
     ? repos.map(rowHtml).join('')
     : '<div class="row loading">No repos selected — click ⚙</div>';
   listEl.innerHTML = banner + rows;
 });
+
+// ---- detail view ----
+function showList() {
+  detailEl.hidden = true;
+  detailEl.innerHTML = '';
+  pickerEl.hidden = true;
+  listEl.hidden = false;
+  hudEl.classList.remove('detailing');
+}
+
+function showDetail(repo) {
+  detailEl.innerHTML = window.detailHtml(repo);
+  detailEl.querySelector('.back').addEventListener('click', showList);
+  const statusEl = detailEl.querySelector('.dstatus');
+  detailEl.querySelectorAll('.act').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      statusEl.hidden = true;
+      const res = await window.hud.openExternal(repo.path, btn.dataset.act);
+      if (res && !res.ok) {
+        statusEl.textContent = res.error === 'no remote'
+          ? 'No git remote configured.'
+          : `Couldn't open (${res.error}).`;
+        statusEl.hidden = false;
+      }
+    });
+  });
+  listEl.hidden = true;
+  pickerEl.hidden = true;
+  detailEl.hidden = false;
+  hudEl.classList.add('detailing');
+}
 
 // ---- picker ----
 function baseName(p) {
@@ -78,7 +113,10 @@ async function renderPicker() {
   paintPicker(await window.hud.getPicker());
 }
 
-// ---- drag the window (pointer capture so it can't outrun the cursor) ----
+// ---- drag the window / click a row (pointer capture so it can't outrun the cursor) ----
+// The whole HUD is the drag surface, so we distinguish a click (open the repo's
+// detail view) from a drag (move the window) by a small movement threshold.
+const DRAG_THRESHOLD = 4; // px of total travel before it counts as a drag
 let drag = null;
 let rafId = 0;
 let pendingPos = null;
@@ -92,20 +130,33 @@ hudEl.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
   if (e.target.closest('button, input, label, a')) return; // let controls work
   const pid = e.pointerId, sx = e.screenX, sy = e.screenY;
+  const row = e.target.closest('.row[data-path]');
   hudEl.setPointerCapture(pid);
-  window.hud.getWinPos().then(([wx, wy]) => { drag = { sx, sy, wx, wy, pid }; });
+  drag = { sx, sy, wx: null, wy: null, pid, moved: false, row };
+  window.hud.getWinPos().then(([wx, wy]) => { if (drag) { drag.wx = wx; drag.wy = wy; } });
 });
 
 hudEl.addEventListener('pointermove', (e) => {
   if (!drag) return;
+  if (!drag.moved) {
+    if (Math.abs(e.screenX - drag.sx) + Math.abs(e.screenY - drag.sy) < DRAG_THRESHOLD) return;
+    drag.moved = true;
+  }
+  if (drag.wx == null) return; // window position not resolved yet
   pendingPos = [drag.wx + (e.screenX - drag.sx), drag.wy + (e.screenY - drag.sy)];
   if (!rafId) rafId = requestAnimationFrame(flushMove);
 });
 
-function endDrag(e) {
+function endDrag() {
   if (!drag) return;
   try { hudEl.releasePointerCapture(drag.pid); } catch {}
+  const { moved, row } = drag;
   drag = null;
+  // A click (no real movement) on a row, while the list is showing, drills in.
+  if (!moved && row && !listEl.hidden) {
+    const repo = reposByPath.get(row.dataset.path);
+    if (repo) showDetail(repo);
+  }
 }
 hudEl.addEventListener('pointerup', endDrag);
 hudEl.addEventListener('pointercancel', endDrag);
@@ -114,6 +165,8 @@ async function openPicker() {
   if (!pickerEl.hidden) return; // already open or opening
   pickerEl.hidden = false;      // claim synchronously to block re-entry
   listEl.hidden = true;
+  detailEl.hidden = true;       // picker supersedes the detail view if it was open
+  hudEl.classList.remove('detailing');
   await renderPicker();
 }
 
