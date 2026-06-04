@@ -245,6 +245,14 @@ app.whenReady().then(() => {
     saveState(dataDir, state);
   }
 
+  // Default the installed app to start at login (once). The tray "Start at
+  // login" toggle still wins afterward — we only set the initial default.
+  if (app.isPackaged && !state.loginConfigured) {
+    try { app.setLoginItemSettings({ openAtLogin: true }); } catch (e) { console.error(e.message); }
+    state.loginConfigured = true;
+    saveState(dataDir, state);
+  }
+
   createWindow();
   rescan();
   reconcile();

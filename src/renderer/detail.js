@@ -82,7 +82,13 @@
     detail = detail || {};
     const rows = [];
     if (detail.base) {
-      rows.push(infoRow('Base', `<span class="dim">${esc(detail.base)}</span>`, { title: detail.base }));
+      const val = detail.baseExact
+        ? `<span class="dim">${esc(detail.base)}</span>`
+        : `<span class="dim">${esc(detail.base)} (guess)</span>`;
+      const title = detail.baseExact
+        ? 'forked from this branch (per reflog)'
+        : 'best guess — git records no fork parent, and no reflog entry was found';
+      rows.push(infoRow(detail.baseExact ? 'Forked from' : 'Base', val, { title }));
       rows.push(infoRow('Diverged', divergedText(detail)));
     } else {
       rows.push(infoRow('Base', '<span class="dim">no remote default branch</span>'));
