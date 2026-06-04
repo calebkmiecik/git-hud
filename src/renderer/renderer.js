@@ -47,8 +47,9 @@ function showList() {
   hudEl.classList.remove('detailing');
 }
 
-// Tick the ahead count down one-by-one to 0, accelerating (gaps shrink) over a
-// ~1.5–2s total, then swap to a green check that pops and fades.
+// Tick the ahead count down one-by-one to 0, then pop a green check. The pace
+// ramps up quickly to a high top speed through the middle, then eases down as it
+// nears 1 — shaped by a sine velocity curve (slow at both ends, fast in between).
 function countdownThenCheck(pushArrow, from) {
   const numEl = pushArrow.querySelector('.pa-num');
   const showCheck = () => {
@@ -58,20 +59,27 @@ function countdownThenCheck(pushArrow, from) {
   };
   if (!numEl || from <= 0) { showCheck(); return; }
 
-  const total = Math.min(2000, 500 + from * 95);
-  // Scheduled time of the k-th decrement (value -> from-k). Ease-out cumulative
-  // => gaps start large and shrink, so the count ramps up in speed.
-  const timeFor = (k) => total * (1 - Math.pow(1 - k / from, 2));
+  const N = from;
+  const total = Math.min(1700, 450 + N * 60);
+  const FLOOR = 0.14; // min speed at the ends; lower => higher peak-to-end ratio
+  const speed = (x) => FLOOR + (1 - FLOOR) * Math.sin(Math.PI * x); // 0..1 position -> speed
+  // Per-step gaps are inverse to speed, normalized so they sum to `total`.
+  const raw = [];
+  for (let k = 1; k <= N; k++) raw.push(1 / speed((k - 0.5) / N));
+  const sum = raw.reduce((a, b) => a + b, 0);
+  let cum = 0;
+  const times = raw.map(g => (cum += (g / sum) * total)); // absolute time of each decrement
+
   const t0 = performance.now();
   let k = 0;
   function step() {
     if (!numEl.isConnected) return; // navigated away mid-countdown
     k++;
-    numEl.textContent = String(from - k);
-    if (k >= from) { showCheck(); return; }
-    setTimeout(step, Math.max(0, timeFor(k + 1) - (performance.now() - t0)));
+    numEl.textContent = String(N - k);
+    if (k >= N) { showCheck(); return; }
+    setTimeout(step, Math.max(0, times[k] - (performance.now() - t0)));
   }
-  setTimeout(step, timeFor(1));
+  setTimeout(step, times[0]);
 }
 
 function showDetail(repo) {
