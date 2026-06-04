@@ -1,8 +1,10 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, dialog, screen, Tray, Menu } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, dialog, screen, Tray, Menu, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const { execFile, spawn } = require('node:child_process');
 const { loadConfig, ensureConfig } = require('./config');
 const { dataDir: getDataDir, configFile, exampleFile } = require('./paths');
+const { githubUrlFromRemote, resolveOpenCommand } = require('./open');
 const { RepoMonitor } = require('./monitor');
 const { discoverRepos } = require('./discovery');
 const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot } = require('./state');
@@ -137,6 +139,55 @@ function toggle() {
   if (tray) tray.setContextMenu(buildTrayMenu());
 }
 
+// Resolve a repo's `origin` remote URL, or null if there is none.
+function getRemoteUrl(repoPath) {
+  return new Promise((resolve) => {
+    execFile('git', ['-C', repoPath, 'remote', 'get-url', 'origin'], (err, stdout) => {
+      resolve(err ? null : stdout.trim());
+    });
+  });
+}
+
+// Open a repo externally. target ∈ editor | terminal | explorer | github.
+// Never throws; returns { ok, error? } so the renderer can surface failures.
+async function openExternal(repoPath, target) {
+  try {
+    if (target === 'explorer') {
+      const err = await shell.openPath(repoPath); // returns '' on success
+      return err ? { ok: false, error: err } : { ok: true };
+    }
+    if (target === 'github') {
+      const url = githubUrlFromRemote(await getRemoteUrl(repoPath));
+      if (!url) return { ok: false, error: 'no remote' };
+      await shell.openExternal(url);
+      return { ok: true };
+    }
+    const cmd = resolveOpenCommand(target, repoPath);
+    if (!cmd) return { ok: false, error: 'unknown target' };
+    spawnDetached(cmd.cmd, cmd.args, target === 'terminal' ? repoPath : null);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// Launch a detached child. On spawn failure for the terminal, fall back to a
+// PowerShell window at the repo path (Windows Terminal may not be installed).
+function spawnDetached(cmd, args, terminalCwd) {
+  const child = spawn(cmd, args, { detached: true, stdio: 'ignore', shell: process.platform === 'win32' });
+  child.on('error', (e) => {
+    if (terminalCwd) {
+      const ps = spawn('powershell', ['-NoExit', '-Command', `Set-Location -LiteralPath '${terminalCwd}'`],
+        { detached: true, stdio: 'ignore', shell: true });
+      ps.on('error', (e2) => console.error('terminal fallback failed:', e2.message));
+      ps.unref();
+    } else {
+      console.error(`open (${cmd}) failed:`, e.message);
+    }
+  });
+  child.unref();
+}
+
 app.whenReady().then(() => {
   appDir = app.getAppPath();
   dataDir = getDataDir(app);
@@ -198,6 +249,9 @@ app.whenReady().then(() => {
     reconcile();
     return state.enabled;
   });
+
+  // Detail view: open a repo externally (editor/terminal/explorer/github).
+  ipcMain.handle('hud:openExternal', (_e, repoPath, target) => openExternal(repoPath, target));
 
   const registered = globalShortcut.register(cfg.hotkey, toggle);
   if (!registered) {
