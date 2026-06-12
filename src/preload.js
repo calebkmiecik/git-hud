@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld('hud', {
     ipcRenderer.removeAllListeners('hud:agentEvent');
     ipcRenderer.on('hud:agentEvent', (_e, payload) => cb(payload));
   },
+  onCost: (cb) => {
+    ipcRenderer.removeAllListeners('hud:cost');
+    ipcRenderer.on('hud:cost', (_e, payload) => cb(payload));
+  },
+  getCost: () => ipcRenderer.invoke('hud:getCost'),
   getPicker: () => ipcRenderer.invoke('hud:getPicker'),
   setEnabled: (repoPath, on) => ipcRenderer.invoke('hud:setEnabled', repoPath, on),
   addRoot: () => ipcRenderer.invoke('hud:addRoot'),

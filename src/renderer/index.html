@@ -42,6 +42,98 @@
   #list { padding-right: 0; transition: padding-right .15s ease; }
   #hud:hover #list { padding-right: 16px; }
 
+  /* cost bar: today's Claude spend vs Kickbacks earnings + net (break-even) */
+  #cost { -webkit-app-region: no-drag; cursor: pointer; padding: 1px 2px 8px; margin-bottom: 7px;
+    border-bottom: 1px solid var(--line); animation: fade .18s ease; }
+  #cost.refreshing { opacity: .5; }
+  #cost .chead { text-transform: uppercase; letter-spacing: 1px; font-size: 9px; font-weight: 700;
+    color: var(--accent); opacity: .8; padding: 0 2px 2px; margin-top: 8px; }
+  #cost .chead:first-child { margin-top: 0; }
+  #cost .crow { display: flex; align-items: baseline; gap: 8px; padding: 1px 2px; }
+  #cost .ck { color: var(--dim); font-size: 10px; flex: 1 1 auto; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #cost .cv { color: var(--fg); font-variant-numeric: tabular-nums; flex: 0 0 auto; font-weight: 600;
+    letter-spacing: .2px; }
+  #cost .cv.cost { color: var(--muted); }
+  #cost .cv.earn { color: var(--green); }
+  #cost .cv.muted { color: var(--dim); font-weight: 400; font-size: 11px; font-style: italic; }
+  #cost .crow.net { margin-top: 2px; }
+  #cost .crow.net .ck { color: var(--muted); font-weight: 600; }
+  #cost .cv.up { color: var(--green); }
+  #cost .cv.down { color: var(--red); }
+  #cost .csub { color: var(--dim); font-size: 9.5px; padding: 4px 2px 0; letter-spacing: .2px; line-height: 1.35; }
+  #cost .csub.warn { color: var(--amber); opacity: .85; }
+
+  /* expandable section wrapper */
+  #cost .usect { border-radius: 8px; }
+  /* detail rows, styled like the repo list: dot · label · value, hover */
+  #cost .dhd { text-transform: uppercase; letter-spacing: 1px; font-size: 9px; font-weight: 700;
+    color: var(--accent); opacity: .75; padding: 7px 4px 2px; }
+  #cost .drow { display: flex; align-items: center; gap: 9px; padding: 3px 4px; margin: 0 -4px;
+    border-radius: 6px; transition: background .12s ease; }
+  #cost .drow:hover { background: rgba(255,255,255,0.05); }
+  #cost .drow .ddot { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); flex: 0 0 auto; }
+  #cost .drow .ddot.wk { background: var(--accent); }
+  #cost .drow .ddot.se { background: var(--amber); }
+  #cost .drow .ddot.earn { background: var(--green); }
+  #cost .drow .ddot.cost { background: var(--muted); }
+  #cost .drow .dk { color: var(--muted); flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font-size: 11px; }
+  #cost .drow .dv { color: var(--fg); font-variant-numeric: tabular-nums; flex: 0 0 auto;
+    font-weight: 600; font-size: 11px; }
+
+  /* pacing pill — the headline grind/slow-down call */
+  #cost .pace { display: flex; align-items: center; gap: 7px; padding: 5px 8px; margin: 0 0 7px;
+    border-radius: 7px; border: 1px solid var(--line); }
+  #cost .pace .pdot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+  #cost .pace .plabel { font-weight: 800; font-size: 10.5px; letter-spacing: .6px; }
+  #cost .pace .pdelta { color: var(--muted); font-size: 10px; margin-left: auto;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #cost .pace.go { background: rgba(87,196,106,0.10); border-color: rgba(87,196,106,0.35); }
+  #cost .pace.go .pdot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #cost .pace.go .plabel { color: var(--green); }
+  #cost .pace.onpace { background: rgba(127,178,255,0.08); border-color: rgba(127,178,255,0.30); }
+  #cost .pace.onpace .pdot { background: var(--accent); }
+  #cost .pace.onpace .plabel { color: var(--accent); }
+  #cost .pace.slow { background: rgba(255,184,77,0.10); border-color: rgba(255,184,77,0.40); }
+  #cost .pace.slow .pdot { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  #cost .pace.slow .plabel { color: var(--amber); }
+  #cost .pace.capped { background: rgba(255,123,114,0.12); border-color: rgba(255,123,114,0.45); }
+  #cost .pace.capped .pdot { background: var(--red); box-shadow: 0 0 7px var(--red); animation: usagepulse 1.4s ease-in-out infinite; }
+  #cost .pace.capped .plabel { color: var(--red); }
+
+  /* compact usage rows: label · bar · % · reset */
+  #cost .urow2 { display: flex; align-items: center; gap: 8px; padding: 2px 2px; }
+  #cost .urow2 .ulab { color: var(--dim); font-size: 10px; font-weight: 700; letter-spacing: .5px; flex: 0 0 18px; }
+  #cost .urow2 .ubar { position: relative; flex: 1 1 auto; height: 6px; border-radius: 99px;
+    background: rgba(255,255,255,0.08); overflow: hidden; }
+  #cost .urow2 .ufill { height: 100%; border-radius: 99px; background: var(--accent); transition: width .4s ease; }
+  /* time-tick: how far the clock is through this window (fill left of it = headroom) */
+  #cost .urow2 .umark { position: absolute; top: -1px; bottom: -1px; width: 2px; margin-left: -1px;
+    background: var(--fg); opacity: .8; border-radius: 1px; z-index: 2; }
+  #cost .urow2 .upct { color: var(--fg); font-weight: 700; font-variant-numeric: tabular-nums; font-size: 11px;
+    flex: 0 0 auto; min-width: 30px; text-align: right; }
+  #cost .urow2 .ureset2 { color: var(--dim); font-size: 9px; flex: 0 0 auto; min-width: 42px; text-align: right; }
+  /* subtle flag: window is running ahead of its pace */
+  #cost .urow2.flag .ubar { box-shadow: inset 0 0 0 1px rgba(255,184,77,0.5); background: rgba(255,184,77,0.10); }
+  #cost .urow2.flag .upct { color: var(--amber); }
+  /* capped: window throttled */
+  #cost .urow2.capped .ubar { box-shadow: inset 0 0 0 1px rgba(255,123,114,0.7); }
+  #cost .urow2.capped .ufill { background: var(--red); }
+  #cost .urow2.capped .upct { color: var(--red); }
+  @keyframes usagepulse { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
+
+  /* earnings line */
+  #cost .cearn { color: var(--muted); font-size: 11px; padding: 6px 2px 1px; margin-top: 6px;
+    border-top: 1px solid var(--line); display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px; }
+  #cost .cearn .up { color: var(--green); font-weight: 600; }
+  #cost .cearn .down { color: var(--red); font-weight: 600; }
+  #cost .cearn .pcov { font-weight: 700; font-variant-numeric: tabular-nums; }
+  #cost .cearn .pcov.over { color: var(--green); }
+  #cost .cearn .pcov.under { color: var(--amber); }
+  #cost .cearn .cv.muted { font-size: 11px; }
+  #cost .cexp { color: var(--dim); margin-left: auto; padding-left: 6px; font-size: 9px; }
+
   .row { display: flex; align-items: center; gap: 9px; padding: 3px 0; }
   .row[data-path] { cursor: pointer; border-radius: 6px; padding: 3px 4px; margin: 0 -4px;
     transition: background .12s ease; }
@@ -167,6 +259,7 @@
 <body>
   <div id="hud">
     <button id="gear" title="Choose repos">&#9881;</button>
+    <div id="cost" hidden></div>
     <div id="list"></div>
     <div id="picker" hidden></div>
     <div id="detail" hidden></div>

@@ -7,5 +7,9 @@
     "position": "top-right",
     "opacity": 0.9
   },
-  "agentPort": 47600
+  "agentPort": 47600,
+  "cost": {
+    "enabled": true,
+    "refreshMs": 60000
+  }
 }

@@ -12,6 +12,7 @@ const { getRepoDetail } = require('./gitDetail');
 const { RepoMonitor } = require('./monitor');
 const { discoverRepos } = require('./discovery');
 const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot, getBase, setBase } = require('./state');
+const { getCostSnapshot, pollDelayFor } = require('./costTracker');
 
 let win = null;
 let tray = null;
@@ -24,6 +25,9 @@ let groups = [];          // [{ root, repos: [...] }] from last discovery
 let cfg = null;
 let cfgError = null;
 let state = { enabled: {} };
+let costTimer = null;
+let costBusy = false;
+let lastSnapshot = null;
 
 function positionFor(position, width, height) {
   const { workArea } = screen.getPrimaryDisplay();
@@ -54,6 +58,8 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'screen-saver');
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', pushUpdate);
+  // Showing the HUD triggers an immediate fresh usage poll (it isn't polled while hidden).
+  win.on('show', () => pushCost({ force: true }));
   win.on('closed', () => { win = null; });
 }
 
@@ -74,6 +80,54 @@ function pushUpdate() {
     p => states.get(p) || { path: p, name: path.basename(p), branch: null, loading: true }
   );
   win.webContents.send('hud:update', { repos: arr, error: cfgError });
+}
+
+// Compute today's Claude spend + Kickbacks earnings and push to the renderer.
+// Guarded so a slow snapshot (PowerShell DPAPI + network) can't overlap itself.
+async function pushCost(opts = {}) {
+  if (!win || costBusy) return;
+  costBusy = true;
+  try {
+    // Only poll the usage API while the HUD is visible (avoids spending calls
+    // on a hidden overlay). `force` (window just shown / manual refresh) bypasses
+    // the usage cache for an immediate fresh reading.
+    const snapshot = await getCostSnapshot({
+      ledgerDir: dataDir,
+      monthlyCost: cfg.plan.monthlyCost,
+      usageAlertPct: cfg.usage.alertPct,
+      fetchUsage: win.isVisible(),
+      usagePollMs: cfg.cost.usagePollMs,
+      forceUsage: !!opts.force,
+      pacingConfig: cfg.usage.pacing,
+    });
+    lastSnapshot = snapshot;
+    if (win) win.webContents.send('hud:cost', snapshot);
+  } catch (e) {
+    if (win) win.webContents.send('hud:cost', { error: e.message });
+  } finally {
+    costBusy = false;
+  }
+}
+
+// Adaptive cadence: base interval, ramping faster as the closest window nears
+// its limit — but only while the HUD is visible (hidden = base, no usage fetch).
+function nextCostDelay() {
+  if (!win || !win.isVisible()) return cfg.cost.usagePollMs;
+  const u = lastSnapshot && lastSnapshot.usage;
+  const maxPct = u ? Math.max((u.session && u.session.pct) || 0, (u.weekly && u.weekly.pct) || 0) : 0;
+  return pollDelayFor(maxPct, cfg.cost.usagePollMs, cfg.cost.usagePollHotMs, cfg.cost.hotPct);
+}
+
+function scheduleCost() {
+  costTimer = setTimeout(async () => {
+    await pushCost({ force: !!(win && win.isVisible()) });
+    scheduleCost();
+  }, nextCostDelay());
+}
+
+function startCostTracker() {
+  if (!cfg.cost.enabled) return;
+  pushCost({ force: true }).then(scheduleCost);
 }
 
 function rescan() {
@@ -258,6 +312,7 @@ app.whenReady().then(() => {
   reconcile();
   createTray();
   startAgentListener();
+  startCostTracker();
 
   // Picker: rescan and return discovered repos grouped by root + enabled flags + roots.
   ipcMain.handle('hud:getPicker', () => {
@@ -318,6 +373,9 @@ app.whenReady().then(() => {
   // Detail view: push the current branch to its upstream.
   ipcMain.handle('hud:push', (_e, repoPath) => gitPush(repoPath));
 
+  // Cost bar: force an immediate refresh (e.g. when the user clicks it).
+  ipcMain.handle('hud:getCost', () => getCostSnapshot({ ledgerDir: dataDir, monthlyCost: cfg.plan.monthlyCost, usageAlertPct: cfg.usage.alertPct, fetchUsage: true, usagePollMs: cfg.cost.usagePollMs, forceUsage: true, pacingConfig: cfg.usage.pacing }));
+
   const registered = globalShortcut.register(cfg.hotkey, toggle);
   if (!registered) {
     cfgError = (cfgError ? cfgError + ' | ' : '') + `Hotkey ${cfg.hotkey} already in use`;
@@ -326,6 +384,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  if (costTimer) { clearTimeout(costTimer); costTimer = null; }
   for (const m of monitors.values()) m.stop();
   if (tray) { tray.destroy(); tray = null; }
   if (agentServer) { agentServer.close(); agentServer = null; }
