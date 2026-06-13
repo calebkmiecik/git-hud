@@ -10,6 +10,25 @@
   "agentPort": 47600,
   "cost": {
     "enabled": true,
-    "refreshMs": 60000
+    "usagePollMs": 60000,
+    "usagePollHotMs": 10000,
+    "hotPct": 85
+  },
+  "plan": {
+    "monthlyCost": 0
+  },
+  "usage": {
+    "alertPct": 85,
+    "pacing": {
+      "weekendWeight": 0,
+      "targetPct": 90,
+      "bandPct": 5,
+      "sessionTargetPct": 100,
+      "sessionBandPct": 10
+    }
+  },
+  "earnings": {
+    "repo": "",
+    "syncMs": 600000
   }
 }

@@ -13,6 +13,7 @@ const https = require('node:https');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
+const earningsStore = require('./earningsStore');
 
 // ---- Claude pricing (USD per 1M tokens) -------------------------------------
 // Cache write is 1.25x base input for the 5-minute TTL, 2x for the 1-hour TTL;
@@ -443,7 +444,8 @@ function computePacing(usage, { weekendWeight = 0, targetPct = 90, bandPct = 5, 
 // opts: { ledgerDir, monthlyCost }  — monthlyCost in USD (0/unset disables the
 // seat-cost math and the bar just shows earnings).
 async function getCostSnapshot(opts = {}) {
-  const { ledgerDir, monthlyCost = 0, usageAlertPct = 0, fetchUsage = false, usagePollMs = 120000, forceUsage = false, pacingConfig } = opts;
+  const { ledgerDir, monthlyCost = 0, usageAlertPct = 0, fetchUsage = false, usagePollMs = 120000, forceUsage = false, pacingConfig,
+          earningsDir = null, machine = null, earningsSyncMs = 600000 } = opts;
   const claude = computeClaudeCostToday();
 
   // Usage: poll the API for live rate-limit headers when asked (HUD visible);
@@ -461,23 +463,37 @@ async function getCostSnapshot(opts = {}) {
     : null;
   const usageError = usageRes ? (usageRes.error || null) : null;
   const kb = await fetchKickbacksEarnings();
-  const ledger = ledgerDir ? updateLedger(ledgerDir, kb.today) : { monthToDate: kb.today, trackedDays: kb.today != null ? 1 : 0 };
 
   const now = new Date();
   const dayOfMonth = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
+  // Month-to-date earnings, in priority order:
+  //   1. shared git store — lifetime delta vs end of last month (cross-machine, exact)
+  //   2. legacy local ledger (sum of per-day today_usd)
+  //   3. today's lifetime (correct while the account is younger than this month)
+  const earnedToday = kb.today;
+  let earnedMonth = null, trackedDays = 0, monthExact = false;
+  if (earningsDir && kb.lifetime != null) {
+    try { earningsStore.recordSnapshot(earningsDir, machine || earningsStore.machineId(), { lifetime: kb.lifetime, today: kb.today }, earningsSyncMs); } catch { /* best-effort */ }
+    const mp = earningsStore.localMonthKey(now);
+    const snaps = earningsStore.readSnapshots(earningsDir);
+    earnedMonth = earningsStore.monthToDate(snaps, kb.lifetime, mp);
+    monthExact = earningsStore.pickBaseline(snaps, mp) != null;
+    trackedDays = dayOfMonth; // MTD is exact-through-today → projection uses elapsed days
+  }
+  if (earnedMonth == null && ledgerDir) {
+    const ledger = updateLedger(ledgerDir, kb.today);
+    earnedMonth = ledger.monthToDate; trackedDays = ledger.trackedDays;
+    monthExact = ledger.trackedDays >= dayOfMonth;
+  }
+  if (earnedMonth == null) earnedMonth = kb.lifetime != null ? kb.lifetime : kb.today;
+
   const hasPlan = Number.isFinite(monthlyCost) && monthlyCost > 0;
   const seatPerDay = hasPlan ? monthlyCost / daysInMonth : null;
   const targetSoFar = hasPlan ? monthlyCost * (dayOfMonth / daysInMonth) : null; // break-even target by now
 
-  const earnedToday = kb.today;
-  const earnedMonth = ledger.monthToDate;
-
-  // Seat cost so far this month is exact from the calendar (day-of-month × daily
-  // rate) — clean today regardless of tracking. Kickbacks month-to-date comes
-  // from the local ledger, which only covers the days we've tracked, so coverage
-  // under-reads for the current month until a full month accrues (exact next cycle).
+  // Seat cost so far this month is exact from the calendar (day-of-month × daily rate).
   const coverageCost = targetSoFar; // = dayOfMonth × seatPerDay
   const coveragePct = (coverageCost && coverageCost > 0 && earnedMonth != null)
     ? (earnedMonth / coverageCost) * 100 : null;
@@ -485,8 +501,8 @@ async function getCostSnapshot(opts = {}) {
     earned: earnedMonth,
     cost: coverageCost,
     pct: coveragePct,
-    trackedDays: ledger.trackedDays,
-    fullMonth: ledger.trackedDays >= dayOfMonth, // whole elapsed month captured
+    trackedDays,
+    fullMonth: monthExact, // month-to-date is exact (real prior-month baseline or full ledger)
   };
 
   return {

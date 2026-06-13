@@ -13,12 +13,14 @@ const { RepoMonitor } = require('./monitor');
 const { discoverRepos } = require('./discovery');
 const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot, getBase, setBase } = require('./state');
 const { getCostSnapshot, pollDelayFor } = require('./costTracker');
+const earningsStore = require('./earningsStore');
 
 let win = null;
 let tray = null;
 let agentServer = null;
 let appDir = null;
 let dataDir = null; // writable userData dir for config.json + state.json
+let earningsDir = null; // local clone of the shared earnings repo (cross-machine MTD)
 let monitors = new Map(); // repoPath -> RepoMonitor
 let states = new Map();   // repoPath -> latest state
 let groups = [];          // [{ root, repos: [...] }] from last discovery
@@ -93,6 +95,8 @@ async function pushCost(opts = {}) {
     // the usage cache for an immediate fresh reading.
     const snapshot = await getCostSnapshot({
       ledgerDir: dataDir,
+      earningsDir: cfg.earnings.repo ? earningsDir : null,
+      earningsSyncMs: cfg.earnings.syncMs,
       monthlyCost: cfg.plan.monthlyCost,
       usageAlertPct: cfg.usage.alertPct,
       fetchUsage: win.isVisible(),
@@ -312,6 +316,17 @@ app.whenReady().then(() => {
   reconcile();
   createTray();
   startAgentListener();
+
+  // Shared earnings store: clone (or pull) the data repo in the background so
+  // month-to-date is consistent across machines. earningsDir is set only AFTER the
+  // clone succeeds, so a poll mid-clone can't write into a half-cloned dir (which
+  // would break `git clone`); until then the month figure falls back to lifetime.
+  if (cfg.earnings.repo) {
+    const clone = path.join(dataDir, 'earnings-data');
+    earningsStore.ensureClone(clone, cfg.earnings.repo)
+      .then((ok) => { if (ok) earningsDir = clone; })
+      .catch(() => {});
+  }
   startCostTracker();
 
   // Picker: rescan and return discovered repos grouped by root + enabled flags + roots.
@@ -374,7 +389,7 @@ app.whenReady().then(() => {
   ipcMain.handle('hud:push', (_e, repoPath) => gitPush(repoPath));
 
   // Cost bar: force an immediate refresh (e.g. when the user clicks it).
-  ipcMain.handle('hud:getCost', () => getCostSnapshot({ ledgerDir: dataDir, monthlyCost: cfg.plan.monthlyCost, usageAlertPct: cfg.usage.alertPct, fetchUsage: true, usagePollMs: cfg.cost.usagePollMs, forceUsage: true, pacingConfig: cfg.usage.pacing }));
+  ipcMain.handle('hud:getCost', () => getCostSnapshot({ ledgerDir: dataDir, earningsDir: cfg.earnings.repo ? earningsDir : null, earningsSyncMs: cfg.earnings.syncMs, monthlyCost: cfg.plan.monthlyCost, usageAlertPct: cfg.usage.alertPct, fetchUsage: true, usagePollMs: cfg.cost.usagePollMs, forceUsage: true, pacingConfig: cfg.usage.pacing }));
 
   const registered = globalShortcut.register(cfg.hotkey, toggle);
   if (!registered) {
