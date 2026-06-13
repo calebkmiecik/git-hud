@@ -318,9 +318,15 @@ app.whenReady().then(() => {
   startAgentListener();
 
   // Shared earnings store: clone (or pull) the data repo in the background so
-  // month-to-date is consistent across machines. Best-effort; never blocks.
-  earningsDir = path.join(dataDir, 'earnings-data');
-  if (cfg.earnings.repo) earningsStore.ensureClone(earningsDir, cfg.earnings.repo).catch(() => {});
+  // month-to-date is consistent across machines. earningsDir is set only AFTER the
+  // clone succeeds, so a poll mid-clone can't write into a half-cloned dir (which
+  // would break `git clone`); until then the month figure falls back to lifetime.
+  if (cfg.earnings.repo) {
+    const clone = path.join(dataDir, 'earnings-data');
+    earningsStore.ensureClone(clone, cfg.earnings.repo)
+      .then((ok) => { if (ok) earningsDir = clone; })
+      .catch(() => {});
+  }
   startCostTracker();
 
   // Picker: rescan and return discovered repos grouped by root + enabled flags + roots.
