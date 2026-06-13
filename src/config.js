@@ -15,6 +15,11 @@ const DEFAULTS = {
   // Monthly Claude plan/seat cost (USD) for the break-even tracker. 0 = unset
   // (the bar then just shows Kickbacks earnings, no seat-cost comparison).
   plan: { monthlyCost: 0 },
+  // Shared earnings store: a private git repo of daily lifetime snapshots, so
+  // month-to-date is consistent across machines. repo "" = disabled (the month
+  // figure then falls back to today's lifetime / the local ledger). syncMs throttles
+  // background git push/pull.
+  earnings: { repo: '', syncMs: 600000 },
   // Claude usage-allowance display + alert + weekly pacing.
   //   alertPct  — flash/chime when session or weekly crosses this % (0 = off).
   //   pacing    — weekday-weighted "grind / on pace / slow down" call:
@@ -47,6 +52,10 @@ function applyDefaults(raw) {
     },
     plan: {
       monthlyCost: Number.isFinite(r.plan?.monthlyCost) ? r.plan.monthlyCost : DEFAULTS.plan.monthlyCost,
+    },
+    earnings: {
+      repo: typeof r.earnings?.repo === 'string' ? r.earnings.repo : DEFAULTS.earnings.repo,
+      syncMs: Number.isFinite(r.earnings?.syncMs) ? r.earnings.syncMs : DEFAULTS.earnings.syncMs,
     },
     usage: {
       alertPct: Number.isFinite(r.usage?.alertPct) ? r.usage.alertPct : DEFAULTS.usage.alertPct,
