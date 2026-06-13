@@ -532,8 +532,8 @@ async function getCostSnapshot(opts = {}) {
     monthNet: hasPlan && earnedMonth != null ? earnedMonth - targetSoFar : null,
 
     // honesty: how many of this month's elapsed days we actually have earnings for
-    trackedDays: ledger.trackedDays,
-    partialMonth: ledger.trackedDays < dayOfMonth,
+    trackedDays,
+    partialMonth: !monthExact,
 
     // informational: today's token throughput + its API list-price equivalent (not billed on a seat plan)
     apiEquivToday: claude.error ? null : claude.cost,
