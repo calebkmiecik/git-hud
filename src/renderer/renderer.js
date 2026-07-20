@@ -55,7 +55,7 @@ window.hud.onUpdate(({ repos, error }) => {
 let latestCost = null;
 let usageExpanded = false;                      // usage/pace detail collapsed by default
 let earnExpanded = false;                       // earnings detail collapsed by default
-const usageAlerted = { session: false, weekly: false }; // one chime per threshold crossing
+const usageAlerted = { session: false, weekly: false, fable: false }; // one chime per threshold crossing
 
 function money(n) {
   return '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -117,6 +117,16 @@ function barFlag(state) {
   return state === 'capped' ? 'capped' : (state === 'slow' || state === 'warn') ? 'flag' : '';
 }
 
+// Bar-highlight class straight from a window's rate-limit status (for windows
+// with no pacing state, like the model-scoped weekly). Anything outside the
+// `allowed*` family is a hard cap; `allowed_warning` is a subtle flag.
+function statusFlag(w) {
+  if (!w || !w.status) return '';
+  const s = String(w.status);
+  if (!s.startsWith('allowed')) return 'capped';
+  return s === 'allowed_warning' ? 'flag' : '';
+}
+
 // Headline pacing pill + the two compact allowance rows (each with a time-tick).
 function usageBlock(c) {
   const u = c.usage;
@@ -126,12 +136,16 @@ function usageBlock(c) {
   const pill = pace
     ? `<div class="pace ${pace.cls}"><span class="pdot"></span><span class="plabel">${pace.label}</span><span class="pdelta">${pace.reason}</span>${chev}</div>`
     : '';
-  if (!u || (!u.session && !u.weekly)) {
+  if (!u || (!u.session && !u.weekly && !u.fable)) {
     return pill + `<div class="csub">${c.usageError ? esc(c.usageError) : 'loading usage…'}</div>`;
   }
+  // Model-scoped weekly ration (e.g. Fable). Pacing doesn't compute a state for
+  // it, so flag straight off its own status (capped when rejecting, flag near it).
+  const fableFlag = statusFlag(u.fable);
   return pill
     + urow('5h', u.session, 5 * 3600, p ? barFlag(p.sessionState) : '')
     + urow('7d', u.weekly, 7 * 86400, p ? barFlag(p.weeklyState) : '')
+    + urow((u.fable && u.fable.model) || 'Fable', u.fable, 7 * 86400, fableFlag)
     + (u.stale ? `<div class="csub">usage stale — reopen to refresh</div>` : '');
 }
 
@@ -201,7 +215,7 @@ function maybeAlert(c) {
   const u = c.usage, thr = c.usageAlertPct;
   if (!u || !thr || u.stale) return;
   let fire = false;
-  for (const k of ['session', 'weekly']) {
+  for (const k of ['session', 'weekly', 'fable']) {
     const w = u[k];
     const over = w && w.pct != null && w.pct >= thr;
     if (over && !usageAlerted[k]) { usageAlerted[k] = true; fire = true; }

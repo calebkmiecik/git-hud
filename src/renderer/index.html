@@ -104,7 +104,7 @@
 
   /* compact usage rows: label · bar · % · reset */
   #cost .urow2 { display: flex; align-items: center; gap: 8px; padding: 2px 2px; }
-  #cost .urow2 .ulab { color: var(--dim); font-size: 10px; font-weight: 700; letter-spacing: .5px; flex: 0 0 18px; }
+  #cost .urow2 .ulab { color: var(--dim); font-size: 10px; font-weight: 700; letter-spacing: .5px; flex: 0 0 36px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #cost .urow2 .ubar { position: relative; flex: 1 1 auto; height: 6px; border-radius: 99px;
     background: rgba(255,255,255,0.08); overflow: hidden; }
   #cost .urow2 .ufill { height: 100%; border-radius: 99px; background: var(--accent); transition: width .4s ease; }

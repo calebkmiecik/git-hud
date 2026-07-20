@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { ratesFor, usageCost, updateLedger, localDateKey, computePacing, pollDelayFor } = require('../src/costTracker');
+const { ratesFor, usageCost, updateLedger, localDateKey, computePacing, pollDelayFor, parseUsage } = require('../src/costTracker');
 
 test('ratesFor matches model families by substring', () => {
   assert.equal(ratesFor('claude-fable-5').input, 10);
@@ -158,4 +158,48 @@ test('computePacing: session behind its tick leaves weekly verdict intact', () =
   assert.equal(p.state, 'go');
   assert.equal(p.binding, 'weekly');
   assert.equal(p.sessionState, 'ok');
+});
+
+// ---- parseUsage (/api/oauth/usage) ----------------------------------------
+// A trimmed copy of a real endpoint response: the three windows live in limits[].
+const USAGE_BODY = {
+  five_hour: { utilization: 13, resets_at: '2026-07-06T17:30:00.185761+00:00' },
+  seven_day: { utilization: 2, resets_at: '2026-07-12T02:00:00.185786+00:00' },
+  seven_day_opus: null,
+  limits: [
+    { kind: 'session', group: 'session', percent: 13, severity: 'normal', resets_at: '2026-07-06T17:30:00.185761+00:00', is_active: true },
+    { kind: 'weekly_all', group: 'weekly', percent: 2, severity: 'normal', resets_at: '2026-07-12T02:00:00.185786+00:00', is_active: false },
+    { kind: 'weekly_scoped', group: 'weekly', percent: 87, severity: 'warning', resets_at: '2026-07-12T02:00:00.186057+00:00', scope: { model: { display_name: 'Fable' } }, is_active: false },
+  ],
+};
+
+test('parseUsage maps session / weekly / fable from limits[]', () => {
+  const u = parseUsage(USAGE_BODY);
+  assert.equal(u.error, null);
+  assert.equal(u.session.pct, 13);
+  assert.equal(u.weekly.pct, 2);
+  assert.equal(u.fable.pct, 87);
+  assert.equal(u.fable.model, 'Fable');
+  // ISO resets_at → unix seconds
+  assert.equal(u.session.resetsAt, Math.floor(Date.parse('2026-07-06T17:30:00.185761+00:00') / 1000));
+});
+
+test('parseUsage maps severity → allowed / allowed_warning / rejected (100% = rejected)', () => {
+  const u = parseUsage(USAGE_BODY);
+  assert.equal(u.session.status, 'allowed');        // severity "normal"
+  assert.equal(u.fable.status, 'allowed_warning');  // severity "warning"
+  const capped = parseUsage({ limits: [{ kind: 'weekly_scoped', percent: 100, severity: 'normal', scope: { model: { display_name: 'Fable' } } }] });
+  assert.equal(capped.fable.status, 'rejected');    // ≥100% always caps
+});
+
+test('parseUsage falls back to top-level five_hour / seven_day when limits[] is absent', () => {
+  const u = parseUsage({ five_hour: { utilization: 40, resets_at: '2026-07-06T17:30:00Z' }, seven_day: { utilization: 5, resets_at: '2026-07-12T02:00:00Z' } });
+  assert.equal(u.session.pct, 40);
+  assert.equal(u.weekly.pct, 5);
+  assert.equal(u.fable, null);
+});
+
+test('parseUsage returns an error object when there are no windows', () => {
+  assert.ok(parseUsage({ limits: [] }).error);
+  assert.ok(parseUsage(null).error);
 });

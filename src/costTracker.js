@@ -285,11 +285,12 @@ function readUsage() {
   }
 }
 
-// Live usage via API rate-limit headers. The VS Code extension doesn't run the
-// status-line command, but the unified rate-limit headers come back on any
-// /v1/messages call — so we make a tiny Haiku call with the OAuth token Claude
-// Code already stores and read session (5h) / weekly (7d) utilization from the
-// `anthropic-ratelimit-unified-*` response headers. Token is used in-memory only.
+// Live usage via Claude Code's own usage endpoint. The VS Code extension doesn't
+// run the status-line command, so we read exactly what `/usage` shows: an
+// OAuth-authenticated GET to /api/oauth/usage using the token Claude Code already
+// stores. It returns every window — 5h session, 7d weekly (all models), and the
+// model-scoped weekly ration (e.g. Fable) — the last of which the per-message
+// rate-limit headers do NOT expose. Token is used in-memory only.
 const CREDS_FILE = path.join(os.homedir(), '.claude', '.credentials.json');
 const OAUTH_BETA = 'oauth-2025-04-20';
 let usageCache = null; // { data, at } — bounds how often we actually hit the API
@@ -301,35 +302,83 @@ function readOAuthToken() {
   } catch { return { token: null, expiresAt: 0 }; }
 }
 
+// ISO-8601 timestamp → unix seconds (computePacing and the HUD ticks work in unix
+// seconds). Passes through a number unchanged; null for missing/unparseable input.
+function isoToUnix(s) {
+  if (s == null) return null;
+  if (typeof s === 'number') return s;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? Math.floor(t / 1000) : null;
+}
+
+// Map the usage endpoint's `severity` to the allowed/allowed_warning/rejected
+// vocabulary computePacing expects (isCappedStatus treats any non-"allowed*"
+// value as a hard cap). A window at/over 100% always reads as rejecting.
+function severityToStatus(sev, pct) {
+  if (pct != null && pct >= 100) return 'rejected';
+  const s = String(sev || '').toLowerCase();
+  if (/warn/.test(s)) return 'allowed_warning';
+  if (/crit|reject|reach|exceed|block/.test(s)) return 'rejected';
+  return 'allowed';
+}
+
+// Shape one window into { pct, resetsAt(unix), status }, or null when empty.
+function usageWindow(pct, resetsAt, severity) {
+  if (pct == null) return null;
+  return { pct, resetsAt: isoToUnix(resetsAt), status: severityToStatus(severity, pct) };
+}
+
+// Parse the /api/oauth/usage body into { session, weekly, fable }. Current data
+// lives in `limits[]` (kind: session | weekly_all | weekly_scoped, each with
+// percent / severity / resets_at; weekly_scoped carries a scope.model — the top
+// model's weekly ration, e.g. Fable). Falls back to the top-level five_hour /
+// seven_day objects when limits[] is absent.
+function parseUsage(body) {
+  if (!body || typeof body !== 'object') return { error: 'no usage body' };
+  const limits = Array.isArray(body.limits) ? body.limits : [];
+  let sessionL = null, weeklyL = null, scopedL = null;
+  for (const l of limits) {
+    if (!l) continue;
+    if (l.kind === 'session') sessionL = l;
+    else if (l.kind === 'weekly_all') weeklyL = l;
+    else if (l.kind === 'weekly_scoped' && !scopedL) scopedL = l;
+  }
+  const session = sessionL
+    ? usageWindow(sessionL.percent, sessionL.resets_at, sessionL.severity)
+    : (body.five_hour ? usageWindow(body.five_hour.utilization, body.five_hour.resets_at, null) : null);
+  const weekly = weeklyL
+    ? usageWindow(weeklyL.percent, weeklyL.resets_at, weeklyL.severity)
+    : (body.seven_day ? usageWindow(body.seven_day.utilization, body.seven_day.resets_at, null) : null);
+  const fable = scopedL ? usageWindow(scopedL.percent, scopedL.resets_at, scopedL.severity) : null;
+  if (fable) fable.model = (scopedL.scope && scopedL.scope.model && scopedL.scope.model.display_name) || 'Fable';
+  if (!session && !weekly && !fable) return { error: 'no usage windows' };
+  return { session, weekly, fable, at: Date.now(), source: 'oauth-usage', error: null };
+}
+
 function fetchClaudeUsage() {
   return new Promise((resolve) => {
     const { token } = readOAuthToken();
     if (!token) { resolve({ error: 'no Claude login found' }); return; }
-    const body = JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 1, messages: [{ role: 'user', content: '.' }] });
     const req = https.request({
-      method: 'POST', hostname: 'api.anthropic.com', path: '/v1/messages', timeout: 10000,
+      method: 'GET', hostname: 'api.anthropic.com', path: '/api/oauth/usage', timeout: 10000,
       headers: {
         authorization: `Bearer ${token}`, 'anthropic-version': '2023-06-01',
-        'anthropic-beta': OAUTH_BETA, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body),
+        'anthropic-beta': OAUTH_BETA, accept: 'application/json', 'user-agent': 'git-hud (usage monitor)',
       },
     }, (res) => {
-      const h = res.headers;
-      res.on('data', () => {}); // drain
+      let buf = '';
+      res.on('data', (c) => { buf += c; });
       res.on('end', () => {
         if (res.statusCode === 401 || res.statusCode === 403) { resolve({ error: 'auth expired — open Claude Code' }); return; }
-        const num = (k) => { const v = h['anthropic-ratelimit-unified-' + k]; return v == null ? null : parseFloat(v); };
-        const u5 = num('5h-utilization'), u7 = num('7d-utilization');
-        if (u5 == null && u7 == null) { resolve({ error: `no rate-limit headers (HTTP ${res.statusCode})` }); return; }
-        resolve({
-          session: u5 == null ? null : { pct: u5 * 100, resetsAt: num('5h-reset'), status: h['anthropic-ratelimit-unified-5h-status'] },
-          weekly: u7 == null ? null : { pct: u7 * 100, resetsAt: num('7d-reset'), status: h['anthropic-ratelimit-unified-7d-status'] },
-          at: Date.now(), source: 'api', error: null,
-        });
+        if (res.statusCode < 200 || res.statusCode >= 300) { resolve({ error: `usage HTTP ${res.statusCode}` }); return; }
+        let body = null;
+        try { body = JSON.parse(buf); } catch { resolve({ error: 'usage parse error' }); return; }
+        resolve(parseUsage(body));
       });
     });
     req.on('error', (e) => resolve({ error: e.message }));
     req.on('timeout', () => { req.destroy(); resolve({ error: 'timeout' }); });
-    req.write(body); req.end();
+    req.end();
   });
 }
 
@@ -454,12 +503,12 @@ async function getCostSnapshot(opts = {}) {
   let usageRes = null;
   if (fetchUsage) usageRes = await getUsage(usagePollMs, forceUsage);
   else if (usageCache) usageRes = { ...usageCache.data, stale: true };
-  if (!usageRes || (!usageRes.session && !usageRes.weekly)) {
+  if (!usageRes || (!usageRes.session && !usageRes.weekly && !usageRes.fable)) {
     const f = readUsage();
     if (f && (f.session || f.weekly)) usageRes = { ...f, error: usageRes && usageRes.error };
   }
-  const usage = usageRes && (usageRes.session || usageRes.weekly)
-    ? { session: usageRes.session, weekly: usageRes.weekly, at: usageRes.at, stale: !!usageRes.stale }
+  const usage = usageRes && (usageRes.session || usageRes.weekly || usageRes.fable)
+    ? { session: usageRes.session, weekly: usageRes.weekly, fable: usageRes.fable, at: usageRes.at, stale: !!usageRes.stale }
     : null;
   const usageError = usageRes ? (usageRes.error || null) : null;
   const kb = await fetchKickbacksEarnings();
@@ -551,6 +600,7 @@ module.exports = {
   updateLedger,
   readUsage,
   fetchClaudeUsage,
+  parseUsage,
   computePacing,
   pollDelayFor,
   localDateKey,
