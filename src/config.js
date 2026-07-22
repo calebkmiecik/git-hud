@@ -6,7 +6,7 @@ const DEFAULTS = {
   hotkey: 'Control+Alt+G',
   pollIntervalMs: 20000,
   startVisible: false,
-  window: { position: 'top-right', opacity: 0.9 },
+  window: { position: 'top-right', opacity: 1 },
   agentPort: 47600,
   // Poll cadence for live usage (each poll is one tiny Haiku call; only while
   // the HUD is visible). Adaptive: usagePollMs when comfortable, ramping down to

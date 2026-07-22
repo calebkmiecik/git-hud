@@ -9,7 +9,7 @@ test('applyDefaults fills missing fields', () => {
   assert.equal(c.pollIntervalMs, 20000);
   assert.equal(c.startVisible, false);
   assert.equal(c.window.position, 'top-right');
-  assert.equal(c.window.opacity, 0.9);
+  assert.equal(c.window.opacity, 1);
   assert.equal(c.agentPort, 47600);
 });
 

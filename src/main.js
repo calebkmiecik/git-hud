@@ -30,6 +30,7 @@ let state = { enabled: {} };
 let costTimer = null;
 let costBusy = false;
 let lastSnapshot = null;
+let hudMode = 'hidden'; // hidden | gauges (compact peek) | full — cycled by the hotkey
 
 function positionFor(position, width, height) {
   const { workArea } = screen.getPrimaryDisplay();
@@ -163,15 +164,13 @@ function reconcile() {
 
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
-    { label: win && win.isVisible() ? 'Hide' : 'Show', click: toggle },
+    { label: win && win.isVisible() ? 'Hide' : 'Show', click: trayToggle },
     {
       label: 'Open settings…',
       click: () => {
         if (!win) return;
-        win.show();
-        win.setAlwaysOnTop(true, 'screen-saver');
+        showMode('full');
         win.webContents.send('hud:openSettings');
-        if (tray) tray.setContextMenu(buildTrayMenu());
       },
     },
     { type: 'separator' },
@@ -194,17 +193,54 @@ function createTray() {
     tray = new Tray(path.join(appDir, 'icon.ico'));
     tray.setToolTip('git-hud');
     tray.setContextMenu(buildTrayMenu());
-    tray.on('click', toggle);
+    tray.on('click', cycle);
   } catch (e) {
     console.error('Tray init failed; continuing without tray:', e.message);
   }
 }
 
-function toggle() {
+// Size + position the window for a view: gauges is a compact top strip, full is
+// the tall panel. resizable is false, so flip it around setBounds.
+function resizeForMode(mode) {
   if (!win) return;
-  if (win.isVisible()) win.hide();
-  else { win.show(); win.setAlwaysOnTop(true, 'screen-saver'); }
+  const [w, h] = mode === 'gauges' ? [272, 128] : [320, 520];
+  const { x, y } = positionFor(cfg.window.position, w, h);
+  win.setResizable(true);
+  win.setBounds({ x, y, width: w, height: h });
+  win.setResizable(false);
+}
+
+// Show the HUD in a given view, telling the renderer which one and refreshing
+// usage now that we're visible (fetchUsage keys off win.isVisible()).
+function showMode(mode) {
+  if (!win) return;
+  hudMode = mode;
+  resizeForMode(mode);
+  win.webContents.send('hud:setView', mode);
+  if (!win.isVisible()) { win.show(); win.setAlwaysOnTop(true, 'screen-saver'); }
+  pushCost({ force: true });
   if (tray) tray.setContextMenu(buildTrayMenu());
+}
+
+function hideHud() {
+  if (!win) return;
+  hudMode = 'hidden';
+  win.hide();
+  if (tray) tray.setContextMenu(buildTrayMenu());
+}
+
+// Hotkey: cycle hidden → gauges (compact peek) → full → hidden.
+function cycle() {
+  if (hudMode === 'hidden') showMode('gauges');
+  else if (hudMode === 'gauges') showMode('full');
+  else hideHud();
+}
+
+// Tray click / menu: straight full-toggle (skip the gauges peek).
+function trayToggle() {
+  if (!win) return;
+  if (win.isVisible()) hideHud();
+  else showMode('full');
 }
 
 // Loopback HTTP listener for Claude Code hook pings. A hook POSTs to
@@ -312,6 +348,7 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+  if (cfg.startVisible) hudMode = 'full'; // window opens in the full view
   rescan();
   reconcile();
   createTray();
@@ -391,7 +428,7 @@ app.whenReady().then(() => {
   // Cost bar: force an immediate refresh (e.g. when the user clicks it).
   ipcMain.handle('hud:getCost', () => getCostSnapshot({ ledgerDir: dataDir, earningsDir: cfg.earnings.repo ? earningsDir : null, earningsSyncMs: cfg.earnings.syncMs, monthlyCost: cfg.plan.monthlyCost, usageAlertPct: cfg.usage.alertPct, fetchUsage: true, usagePollMs: cfg.cost.usagePollMs, forceUsage: true, pacingConfig: cfg.usage.pacing }));
 
-  const registered = globalShortcut.register(cfg.hotkey, toggle);
+  const registered = globalShortcut.register(cfg.hotkey, cycle);
   if (!registered) {
     cfgError = (cfgError ? cfgError + ' | ' : '') + `Hotkey ${cfg.hotkey} already in use`;
   }

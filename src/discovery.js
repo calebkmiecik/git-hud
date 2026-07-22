@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const SKIP = new Set(['node_modules', '.git']);
-const MAX_DEPTH = 6;
+const MAX_DEPTH = 8;
 
 // A directory is a repo if it contains a `.git` entry (dir for normal repos,
 // file for worktrees/submodules).
@@ -11,11 +11,13 @@ function isRepo(dir) {
 }
 
 // Recursively collect repos under `dir`. A directory containing `.git` is a
-// repo and we stop descending into it. Skips node_modules and hidden/.dot
-// dirs, and caps depth so large trees stay fast.
+// repo — we record it AND keep descending, so nested repos (submodules or plain
+// sub-repos, e.g. a superproject like AxioStack that holds many repos inside it)
+// are found too. Skips node_modules, the .git dir, and hidden/.dot dirs, and
+// caps depth so large trees stay fast.
 function findReposUnder(dir, depth, acc) {
   if (depth > MAX_DEPTH) return;
-  if (isRepo(dir)) { acc.push(dir); return; }
+  if (isRepo(dir)) acc.push(dir); // record, then continue into it for nested repos
   let entries = [];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });

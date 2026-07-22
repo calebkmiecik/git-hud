@@ -5,7 +5,7 @@
   "startVisible": false,
   "window": {
     "position": "top-right",
-    "opacity": 0.9
+    "opacity": 1
   },
   "agentPort": 47600,
   "cost": {

@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('hud', {
     ipcRenderer.removeAllListeners('hud:cost');
     ipcRenderer.on('hud:cost', (_e, payload) => cb(payload));
   },
+  onSetView: (cb) => {
+    ipcRenderer.removeAllListeners('hud:setView');
+    ipcRenderer.on('hud:setView', (_e, mode) => cb(mode));
+  },
   getCost: () => ipcRenderer.invoke('hud:getCost'),
   getPicker: () => ipcRenderer.invoke('hud:getPicker'),
   setEnabled: (repoPath, on) => ipcRenderer.invoke('hud:setEnabled', repoPath, on),
