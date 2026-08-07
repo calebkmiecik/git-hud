@@ -30,5 +30,12 @@
   "earnings": {
     "repo": "",
     "syncMs": 600000
+  },
+  "strip": {
+    "enabled": true,
+    "corner": "bottom-left",
+    "width": 288,
+    "height": 48,
+    "style": "dials"
   }
 }

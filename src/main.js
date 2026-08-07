@@ -16,6 +16,7 @@ const { getCostSnapshot, pollDelayFor } = require('./costTracker');
 const earningsStore = require('./earningsStore');
 
 let win = null;
+let stripWin = null; // always-on usage strip parked over the taskbar dead zone
 let tray = null;
 let agentServer = null;
 let appDir = null;
@@ -44,8 +45,7 @@ function positionFor(position, width, height) {
 }
 
 function createWindow() {
-  const width = 320, height = 520;
-  const { x, y } = positionFor(cfg.window.position, width, height);
+  const { x, y, width, height } = hudAnchorBounds('full');
   win = new BrowserWindow({
     width, height, x, y,
     frame: false, transparent: true, resizable: false,
@@ -60,10 +60,124 @@ function createWindow() {
   });
   win.setAlwaysOnTop(true, 'screen-saver');
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  win.once('ready-to-show', pushUpdate);
+  win.once('ready-to-show', () => {
+    pushUpdate();
+    // Slide in if we opened already-visible (startVisible); otherwise the panel
+    // waits off-screen below the taskbar until something shows it.
+    if (win && win.isVisible()) win.webContents.send('hud:slide', 'in');
+  });
   // Showing the HUD triggers an immediate fresh usage poll (it isn't polled while hidden).
   win.on('show', () => pushCost({ force: true }));
   win.on('closed', () => { win = null; });
+}
+
+// ── always-on taskbar strip ───────────────────────────────────────────────
+// A slim readout parked in the empty corner of the taskbar (on a centred Win11
+// taskbar the far end is permanently unoccupied). There is no supported way to
+// put content *inside* the taskbar — Deskbands were deprecated in Windows 7 and
+// Win11's taskbar exposes no extension point — so this is a frameless
+// always-on-top window laid over that dead space, which looks the same.
+//
+// Geometry comes from the live difference between a display's full bounds and
+// its work area, so it follows the taskbar's real edge and thickness instead of
+// assuming 48px at the bottom.
+function taskbarRect() {
+  const d = screen.getPrimaryDisplay();
+  const b = d.bounds, wa = d.workArea;
+  if (wa.y > b.y) return { edge: 'top', x: b.x, y: b.y, w: b.width, h: wa.y - b.y };
+  if (wa.height < b.height) {
+    const top = wa.y + wa.height;
+    return { edge: 'bottom', x: b.x, y: top, w: b.width, h: (b.y + b.height) - top };
+  }
+  if (wa.x > b.x) return { edge: 'left', x: b.x, y: b.y, w: wa.x - b.x, h: b.height };
+  if (wa.width < b.width) return { edge: 'right', x: wa.x + wa.width, y: b.y, w: b.width - wa.width, h: b.height };
+  return null; // auto-hidden or no taskbar reserved
+}
+
+// Windows refuses to make a top-level window shorter than this, silently
+// clamping it — and Electron's getBounds() keeps reporting whatever you asked
+// for, so the lie is invisible from JS. A 48px taskbar therefore needs a 64px
+// window, positioned so the overhang falls *outside* the taskbar band and the
+// content is padded into the band itself (`pad`, handed to the renderer).
+const MIN_WIN_H = 64;
+
+// Where the strip sits: hugging the configured end of the taskbar. Falls back to
+// the screen corner when no taskbar space is reserved (auto-hide), so the strip
+// stays put instead of vanishing.
+function stripBounds() {
+  const d = screen.getPrimaryDisplay();
+  const b = d.bounds;
+  const tb = taskbarRect();
+  const horizontal = tb && (tb.edge === 'top' || tb.edge === 'bottom');
+  const width = Math.round(cfg.strip.width);
+  const band = Math.round(horizontal ? tb.h : cfg.strip.height); // the visible taskbar band
+  const height = Math.max(MIN_WIN_H, band);
+  const left = cfg.strip.corner.includes('left');
+  const x = Math.round(left ? b.x : b.x + b.width - width);
+  let y, edge;
+  if (tb && tb.edge === 'top') { y = tb.y; edge = 'top'; }               // overhang below
+  else if (tb && tb.edge === 'bottom') { y = tb.y + tb.h - height; edge = 'bottom'; } // overhang above
+  else { edge = cfg.strip.corner.includes('top') ? 'top' : 'bottom';
+    y = edge === 'top' ? b.y : b.y + b.height - height; }
+  return { x, y: Math.round(y), width, height, band, edge, pad: height - band };
+}
+
+// The taskbar is itself a topmost window, so simply being topmost is not enough
+// to stay above it — Windows re-raises the shell whenever it's activated, which
+// is what made the strip vanish moments after appearing. Re-assert periodically;
+// it's the only reliable way to hold the position without a native hook.
+let stripTopTimer = null;
+
+function assertStripOnTop() {
+  if (!stripWin || stripWin.isDestroyed()) return;
+  stripWin.setAlwaysOnTop(true, 'screen-saver');
+  stripWin.moveTop();
+}
+
+function createStrip() {
+  if (stripWin || !cfg.strip.enabled) return;
+  const { x, y, width, height, pad, edge } = stripBounds();
+  stripWin = new BrowserWindow({
+    x, y, width, height,
+    frame: false, transparent: true, resizable: false, movable: false,
+    skipTaskbar: true, focusable: false, show: false,
+    // 'screen-saver' is the level that can sit above the taskbar.
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-strip.js'),
+      backgroundThrottling: false,
+    },
+  });
+  stripWin.setAlwaysOnTop(true, 'screen-saver');
+  // `pad` tells the renderer how much of the window falls outside the taskbar
+  // band, so it can push the bars into the visible part.
+  stripWin.loadFile(path.join(__dirname, 'renderer', 'strip.html'),
+    { query: { pad: String(pad), edge, style: cfg.strip.style } });
+  stripWin.once('ready-to-show', () => {
+    if (!stripWin) return;
+    stripWin.showInactive(); // never steal focus from what you're working in
+    assertStripOnTop();
+    if (lastSnapshot) stripWin.webContents.send('hud:cost', lastSnapshot);
+  });
+  stripWin.on('closed', () => { stripWin = null; });
+  if (stripTopTimer) clearInterval(stripTopTimer);
+  stripTopTimer = setInterval(assertStripOnTop, 1000);
+}
+
+function destroyStrip() {
+  if (stripTopTimer) { clearInterval(stripTopTimer); stripTopTimer = null; }
+  if (!stripWin) return;
+  const w = stripWin;
+  stripWin = null;
+  w.destroy();
+}
+
+function repositionStrip() {
+  if (!stripWin) return;
+  const { x, y, width, height, pad, edge } = stripBounds();
+  stripWin.setBounds({ x, y, width, height });
+  stripWin.webContents.send('strip:geometry', { pad, edge });
+  assertStripOnTop();
 }
 
 // Enabled repos in discovery order (stable grouping).
@@ -87,37 +201,50 @@ function pushUpdate() {
 
 // Compute today's Claude spend + Kickbacks earnings and push to the renderer.
 // Guarded so a slow snapshot (PowerShell DPAPI + network) can't overlap itself.
+// True when some surface is actually showing usage — the HUD panel or the
+// always-on strip. Gates the usage fetch so a fully hidden app stops spending
+// calls, while the strip (which is on-screen by definition) keeps itself fresh.
+function usageOnScreen() {
+  return !!(win && win.isVisible()) || !!stripWin;
+}
+
+// Fan a snapshot out to every surface that renders it.
+function sendCost(payload) {
+  if (win) win.webContents.send('hud:cost', payload);
+  if (stripWin) stripWin.webContents.send('hud:cost', payload);
+}
+
 async function pushCost(opts = {}) {
-  if (!win || costBusy) return;
+  if ((!win && !stripWin) || costBusy) return;
   costBusy = true;
   try {
-    // Only poll the usage API while the HUD is visible (avoids spending calls
-    // on a hidden overlay). `force` (window just shown / manual refresh) bypasses
-    // the usage cache for an immediate fresh reading.
+    // Only poll the usage API while something is actually displaying it.
+    // `force` (window just shown / manual refresh) bypasses the usage cache for
+    // an immediate fresh reading.
     const snapshot = await getCostSnapshot({
       ledgerDir: dataDir,
       earningsDir: cfg.earnings.repo ? earningsDir : null,
       earningsSyncMs: cfg.earnings.syncMs,
       monthlyCost: cfg.plan.monthlyCost,
       usageAlertPct: cfg.usage.alertPct,
-      fetchUsage: win.isVisible(),
+      fetchUsage: usageOnScreen(),
       usagePollMs: cfg.cost.usagePollMs,
       forceUsage: !!opts.force,
       pacingConfig: cfg.usage.pacing,
     });
     lastSnapshot = snapshot;
-    if (win) win.webContents.send('hud:cost', snapshot);
+    sendCost(snapshot);
   } catch (e) {
-    if (win) win.webContents.send('hud:cost', { error: e.message });
+    sendCost({ error: e.message });
   } finally {
     costBusy = false;
   }
 }
 
 // Adaptive cadence: base interval, ramping faster as the closest window nears
-// its limit — but only while the HUD is visible (hidden = base, no usage fetch).
+// its limit — but only while usage is on screen (nothing shown = base cadence).
 function nextCostDelay() {
-  if (!win || !win.isVisible()) return cfg.cost.usagePollMs;
+  if (!usageOnScreen()) return cfg.cost.usagePollMs;
   const u = lastSnapshot && lastSnapshot.usage;
   const maxPct = u ? Math.max((u.session && u.session.pct) || 0, (u.weekly && u.weekly.pct) || 0) : 0;
   return pollDelayFor(maxPct, cfg.cost.usagePollMs, cfg.cost.usagePollHotMs, cfg.cost.hotPct);
@@ -125,7 +252,7 @@ function nextCostDelay() {
 
 function scheduleCost() {
   costTimer = setTimeout(async () => {
-    await pushCost({ force: !!(win && win.isVisible()) });
+    await pushCost({ force: usageOnScreen() });
     scheduleCost();
   }, nextCostDelay());
 }
@@ -175,6 +302,28 @@ function buildTrayMenu() {
     },
     { type: 'separator' },
     {
+      label: 'Usage strip on taskbar',
+      type: 'checkbox',
+      checked: !!stripWin,
+      click: (item) => {
+        cfg.strip.enabled = item.checked;
+        if (item.checked) createStrip(); else destroyStrip();
+        if (tray) tray.setContextMenu(buildTrayMenu());
+      },
+    },
+    {
+      label: 'Strip style',
+      submenu: ['bars', 'dials'].map(s => ({
+        label: s === 'bars' ? 'Bars' : 'Dials',
+        type: 'radio',
+        checked: cfg.strip.style === s,
+        click: () => {
+          cfg.strip.style = s;
+          if (stripWin) stripWin.webContents.send('strip:style', s);
+        },
+      })),
+    },
+    {
       label: 'Start at login',
       type: 'checkbox',
       checked: app.getLoginItemSettings().openAtLogin,
@@ -210,14 +359,52 @@ function resizeForMode(mode) {
   win.setResizable(false);
 }
 
+// Park the panel directly above the strip so it can slide out of the taskbar.
+// The window's *bottom edge sits on the taskbar's top edge*, which is what makes
+// the slide work: content translated below that edge is clipped by the window
+// and genuinely appears to emerge from behind the bar. Falls back to the plain
+// corner placement when the strip is off.
+function hudAnchorBounds(mode) {
+  const [w, h] = mode === 'gauges' ? [272, 128] : [320, 520];
+  if (!cfg.strip.enabled) return { ...positionFor(cfg.window.position, w, h), width: w, height: h };
+  const d = screen.getPrimaryDisplay();
+  const b = d.bounds;
+  const tb = taskbarRect();
+  const left = cfg.strip.corner.includes('left');
+  const x = left ? b.x : b.x + b.width - w;
+  // Sit on the inner edge of the taskbar (or the screen edge if it auto-hides).
+  const y = tb && tb.edge === 'bottom' ? tb.y - h
+    : tb && tb.edge === 'top' ? tb.y + tb.h
+    : b.y + b.height - h;
+  return { x: Math.round(x), y: Math.round(y), width: w, height: h };
+}
+
+// How long the renderer's slide takes; main waits this out before hiding so the
+// window doesn't vanish mid-animation. Keep in step with --dur-slide in the CSS.
+const SLIDE_MS = 260;
+let hideTimer = null;
+
 // Show the HUD in a given view, telling the renderer which one and refreshing
-// usage now that we're visible (fetchUsage keys off win.isVisible()).
+// usage now that we're visible.
 function showMode(mode) {
   if (!win) return;
+  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  const wasHidden = !win.isVisible();
   hudMode = mode;
-  resizeForMode(mode);
   win.webContents.send('hud:setView', mode);
-  if (!win.isVisible()) { win.show(); win.setAlwaysOnTop(true, 'screen-saver'); }
+  if (wasHidden) {
+    // Re-anchor on each fresh show; a drag only lasts for that appearance.
+    const { x, y, width, height } = hudAnchorBounds(mode);
+    win.setResizable(true);
+    win.setBounds({ x, y, width, height });
+    win.setResizable(false);
+    win.setOpacity(cfg.window.opacity);
+    win.show();
+    win.setAlwaysOnTop(true, 'screen-saver');
+  } else {
+    resizeForMode(mode);
+  }
+  win.webContents.send('hud:slide', 'in');
   pushCost({ force: true });
   if (tray) tray.setContextMenu(buildTrayMenu());
 }
@@ -225,14 +412,23 @@ function showMode(mode) {
 function hideHud() {
   if (!win) return;
   hudMode = 'hidden';
-  win.hide();
+  if (!win.isVisible()) return;
+  // Slide out first, then actually hide once the animation has played.
+  win.webContents.send('hud:slide', 'out');
+  if (hideTimer) clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    hideTimer = null;
+    if (win && hudMode === 'hidden') win.hide();
+  }, SLIDE_MS);
   if (tray) tray.setContextMenu(buildTrayMenu());
 }
 
-// Hotkey: cycle hidden → gauges (compact peek) → full → hidden.
+// Hotkey: plain toggle now that the always-on strip carries usage ambiently —
+// there's nothing left for a peek view to reveal, so the hotkey only decides
+// whether the repo panel is up. ('gauges' remains a valid mode the renderer
+// still implements, but nothing routes to it any more.)
 function cycle() {
-  if (hudMode === 'hidden') showMode('gauges');
-  else if (hudMode === 'gauges') showMode('full');
+  if (hudMode === 'hidden') showMode('full');
   else hideHud();
 }
 
@@ -349,6 +545,11 @@ app.whenReady().then(() => {
 
   createWindow();
   if (cfg.startVisible) hudMode = 'full'; // window opens in the full view
+  createStrip();
+  // Taskbar can move, resize, or the resolution can change under us.
+  screen.on('display-metrics-changed', repositionStrip);
+  screen.on('display-added', repositionStrip);
+  screen.on('display-removed', repositionStrip);
   rescan();
   reconcile();
   createTray();
@@ -385,6 +586,34 @@ app.whenReady().then(() => {
       reconcile();
     }
     return { groups, enabled: state.enabled, roots: state.roots };
+  });
+
+  // Clicking the taskbar strip opens the full HUD (and focuses it).
+  ipcMain.on('strip:openHud', () => showMode('full'));
+
+  // Right-click the strip for its own menu. The window is deliberately
+  // non-focusable (so it never steals focus while you type), but a popup menu
+  // needs focus to stay open — so lend it focusability for the menu's lifetime.
+  ipcMain.on('strip:menu', () => {
+    if (!stripWin) return;
+    const setStyle = (s) => {
+      cfg.strip.style = s;
+      if (stripWin) stripWin.webContents.send('strip:style', s);
+      if (tray) tray.setContextMenu(buildTrayMenu());
+    };
+    const menu = Menu.buildFromTemplate([
+      { label: 'Bars', type: 'radio', checked: cfg.strip.style === 'bars', click: () => setStyle('bars') },
+      { label: 'Dials', type: 'radio', checked: cfg.strip.style === 'dials', click: () => setStyle('dials') },
+      { type: 'separator' },
+      { label: 'Open HUD', click: () => showMode('full') },
+      { label: 'Hide strip', click: () => { cfg.strip.enabled = false; destroyStrip();
+        if (tray) tray.setContextMenu(buildTrayMenu()); } },
+    ]);
+    stripWin.setFocusable(true);
+    menu.popup({
+      window: stripWin,
+      callback: () => { if (stripWin && !stripWin.isDestroyed()) stripWin.setFocusable(false); },
+    });
   });
 
   // Manual window drag (we don't use an OS drag region so DOM hover works).
@@ -436,9 +665,11 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   if (costTimer) { clearTimeout(costTimer); costTimer = null; }
   for (const m of monitors.values()) m.stop();
   if (tray) { tray.destroy(); tray = null; }
+  destroyStrip();
   if (agentServer) { agentServer.close(); agentServer = null; }
 });
 

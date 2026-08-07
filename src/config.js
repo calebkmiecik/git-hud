@@ -30,6 +30,16 @@ const DEFAULTS = {
   //     sessionBandPct = how far ahead of its time-tick the 5h session may run
   //       before it flags as the binding constraint (EASE OFF).
   usage: { alertPct: 85, pacing: { weekendWeight: 0, targetPct: 90, bandPct: 5, sessionTargetPct: 100, sessionBandPct: 10 } },
+  // Always-on usage strip laid over the empty end of the taskbar.
+  //   corner — which end to hug: bottom-left | bottom-right (a centred Win11
+  //            taskbar leaves both ends free; a left-aligned one only the right).
+  //   width  — how wide the strip is, in px. A centred Win11 taskbar leaves
+  //            ~800px free at the left on a 1920 screen; the icon cluster grows
+  //            leftward as apps open, so this stays well clear of it.
+  //   height — fallback height used only when the taskbar reserves no space
+  //            (auto-hide); otherwise the strip matches the taskbar's thickness.
+  //   style  — dials | bars (switchable live from the strip's right-click menu).
+  strip: { enabled: true, corner: 'bottom-left', width: 288, height: 48, style: 'dials' },
 };
 
 function applyDefaults(raw) {
@@ -56,6 +66,15 @@ function applyDefaults(raw) {
     earnings: {
       repo: typeof r.earnings?.repo === 'string' ? r.earnings.repo : DEFAULTS.earnings.repo,
       syncMs: Number.isFinite(r.earnings?.syncMs) ? r.earnings.syncMs : DEFAULTS.earnings.syncMs,
+    },
+    strip: {
+      enabled: typeof r.strip?.enabled === 'boolean' ? r.strip.enabled : DEFAULTS.strip.enabled,
+      corner: r.strip?.corner || DEFAULTS.strip.corner,
+      width: Number.isFinite(r.strip?.width) ? r.strip.width : DEFAULTS.strip.width,
+      height: Number.isFinite(r.strip?.height) ? r.strip.height : DEFAULTS.strip.height,
+      // Accept either known value; anything else (or absent) falls to the default.
+      style: (r.strip?.style === 'dials' || r.strip?.style === 'bars')
+        ? r.strip.style : DEFAULTS.strip.style,
     },
     usage: {
       alertPct: Number.isFinite(r.usage?.alertPct) ? r.usage.alertPct : DEFAULTS.usage.alertPct,

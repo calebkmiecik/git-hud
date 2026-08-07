@@ -25,12 +25,20 @@
     --green: #6a9d72;   /* muted sage */
     --amber: #c19a54;   /* muted */
     --red:   #bd6259;   /* muted brick */
+    /* gauge motion: slow enough to read the rescale as a zoom, not a jump */
+    --dur-dial: .5s;
+    --dur-view: .2s;
+    --dur-slide: .26s;  /* keep in step with SLIDE_MS in main.js */
+    --ease-dial: cubic-bezier(.32, .72, 0, 1);
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: transparent; color: var(--fg);
+  html, body { margin: 0; height: 100%; background: transparent; color: var(--fg);
     font: 12.5px/1.5 var(--serif); -webkit-user-select: none;
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-  body { padding: 13px; }
+  /* The window's bottom edge sits on the taskbar, and the panel is anchored to
+     it, so translating the panel down puts it *behind* the bar — clipped by the
+     window. Sliding it back to 0 is the flyout. */
+  body { padding: 13px; display: flex; align-items: flex-end; overflow: hidden; }
   /* data figures: lining + tabular so columns align without a mono face */
   .num { font-variant-numeric: lining-nums tabular-nums; font-feature-settings: "lnum" 1, "tnum" 1; }
 
@@ -38,7 +46,15 @@
   #hud { position: relative; background: var(--bg);
     border: 1px solid var(--edge); border-radius: 5px;
     padding: 11px 13px; max-height: 92vh; overflow-y: auto; cursor: move;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.55); }
+    box-shadow: 0 2px 10px rgba(0,0,0,0.55);
+    flex: 1 1 auto;
+    /* Parked below the window edge (behind the taskbar) until told to slide. */
+    transform: translateY(calc(100% + 26px));
+    transition: transform var(--dur-slide) var(--ease-dial); }
+  body.slide-in #hud { transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    #hud { transition-duration: .1s; }
+  }
 
   #hud::-webkit-scrollbar { width: 8px; }
   #hud::-webkit-scrollbar-track { background: transparent; }
@@ -97,19 +113,8 @@
   #cost .drow .dv { color: var(--fg); font-variant-numeric: lining-nums tabular-nums; flex: 0 0 auto;
     font-weight: 600; font-size: 11.5px; }
 
-  /* usage gauges: small-caps label · flat rule-bar + 1px time-mark · figure · reset */
-  #cost .urow2 { display: flex; align-items: center; gap: 10px; padding: 3px 2px; }
-  #cost .urow2 .ulab { font-variant: all-small-caps; color: var(--dim); font-size: 10.5px; font-weight: 600;
-    letter-spacing: .5px; flex: 0 0 42px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #cost .urow2 .ubar { position: relative; flex: 1 1 auto; height: 6px; background: var(--well); overflow: hidden; }
-  #cost .urow2 .ufill { height: 100%; background: var(--steel); transition: width .4s ease; }
-  #cost .urow2 .umark { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -1px; background: var(--fg); z-index: 2; }
-  #cost .urow2 .upct { color: var(--fg); font-weight: 700; font-variant-numeric: lining-nums tabular-nums; font-size: 12px;
-    flex: 0 0 auto; min-width: 34px; text-align: right; }
-  #cost .urow2 .ureset2 { color: var(--dim); font-size: 10px; font-style: italic; flex: 0 0 auto; min-width: 42px; text-align: right;
-    font-variant-numeric: lining-nums tabular-nums; }
-  /* fill + figure colour is set inline per bar — a solid colour sampled from a
-     continuous green→amber→red scale by how far the fill is ahead of its tick */
+  /* The allowance bars moved to the always-on taskbar strip (strip.html); the
+     panel no longer repeats them, so their styles live there now. */
 
   /* earnings line */
   #cost .cearn { color: var(--muted); font-size: 11.5px; padding: 9px 2px 1px; margin-top: 8px;
@@ -143,7 +148,7 @@
     border-left: 2px solid var(--accent); background: var(--well); font-style: italic; }
 
   /* ── picker ───────────────────────────────────────────────────────────── */
-  #picker { -webkit-app-region: no-drag; padding-right: 18px; animation: fade .18s ease; }
+  #picker { -webkit-app-region: no-drag; padding-right: 18px; }
   #picker .phead { font-variant: all-small-caps; letter-spacing: .8px; font-size: 11px; font-weight: 600;
     color: var(--muted); display: flex; align-items: center; gap: 10px;
     padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--rule); }
@@ -180,7 +185,7 @@
 
   /* ── detail view ──────────────────────────────────────────────────────── */
   #hud.detailing #gear, #hud.gauges #gear { display: none; }
-  #detail { -webkit-app-region: no-drag; padding-right: 4px; animation: fade .18s ease; }
+  #detail { -webkit-app-region: no-drag; padding-right: 4px; }
   #detail .dhead { display: flex; align-items: baseline; gap: 10px; padding-bottom: 9px;
     margin-bottom: 10px; border-bottom: 1px solid var(--rule); }
   #detail .back { -webkit-app-region: no-drag; background: none; border: none; color: var(--muted);
@@ -252,19 +257,45 @@
 
   /* ── gauges (compact peek) ────────────────────────────────────────────── */
   #dials { -webkit-app-region: no-drag; display: flex; justify-content: center;
-    align-items: flex-start; gap: 4px; padding: 8px 2px 4px; animation: fade .18s ease; }
+    align-items: flex-start; gap: 4px; padding: 8px 2px 4px; }
   #dials[hidden] { display: none; } /* id specificity beats the UA [hidden] rule — restore it */
   #dials .dial { display: flex; }
   #dials svg { width: 70px; height: 58px; display: block; overflow: visible; }
-  #dials .darc { fill: none; stroke-width: 4; stroke-linecap: round; }
+  #dials .darc { fill: none; stroke-width: 4; stroke-linecap: round;
+    transition: stroke var(--dur-dial) var(--ease-dial); }
   #dials .dtime { stroke: var(--dim); stroke-width: 0.9; stroke-linecap: round; }
   #dials .dneedle { stroke: var(--fg); stroke-width: 1.4; stroke-linecap: round; }
   #dials .dhub { fill: var(--fg); }
+  /* Hands are drawn straight up and rotated about the hub, so the sweep — and the
+     re-map when the dial rescales at 90% — animates on transform alone. */
+  #dials .dhand { transform-box: view-box; transform-origin: 30px 26px;
+    transition: transform var(--dur-dial) var(--ease-dial); }
+  /* tick at the 90% mark: appears only once the dial has rescaled */
+  #dials .dbreak { stroke: var(--bg); stroke-width: 1.2; stroke-linecap: butt;
+    transition: opacity var(--dur-dial) var(--ease-dial); }
   #dials text.dlab { fill: var(--muted); font-variant: all-small-caps; letter-spacing: .5px;
     font-size: 9px; text-anchor: middle; }
+  @media (prefers-reduced-motion: reduce) {
+    #dials .dhand, #dials .darc, #dials .dbreak { transition-duration: 0s; }
+  }
   #dials .dsub { color: var(--dim); font-size: 9px; font-style: italic; }
 
   @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ── view transitions ─────────────────────────────────────────────────────
+     Applied by the renderer whenever a surface becomes the visible one (list ⇄
+     detail ⇄ picker, and the gauges peek). Class-driven rather than a bare
+     `animation:` so it can be re-triggered on each swap — the elements persist,
+     so a one-shot animation would otherwise only ever run at first paint. */
+  .vin { animation: viewIn var(--dur-view) var(--ease-dial) both; }
+  @keyframes viewIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .vin { animation-duration: .1s; }
+    @keyframes viewIn { from { opacity: 0; transform: none; } to { opacity: 1; transform: none; } }
+  }
 </style>
 </head>
 <body>
@@ -276,6 +307,7 @@
     <div id="detail" hidden></div>
     <div id="dials" hidden></div>
   </div>
+  <script src="usage.js"></script>
   <script src="detail.js"></script>
   <script src="renderer.js"></script>
 </body>

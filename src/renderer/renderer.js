@@ -17,6 +17,18 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 }
 
+// Play the view-entrance animation on a surface that just became visible. The
+// surfaces persist in the DOM, so the class has to be cleared and re-applied
+// (with a reflow between) or the animation only ever runs on first paint.
+function animateIn(...els) {
+  for (const el of els) {
+    if (!el || el.hidden) continue;
+    el.classList.remove('vin');
+    void el.offsetWidth; // force reflow so the re-add restarts the animation
+    el.classList.add('vin');
+  }
+}
+
 function abText(r) {
   if (r.ahead == null || r.behind == null) return '';
   const parts = [];
@@ -55,7 +67,6 @@ window.hud.onUpdate(({ repos, error }) => {
 
 // ---- cost/usage bar ----
 let latestCost = null;
-let usageExpanded = false;                      // usage/pace detail collapsed by default
 let earnExpanded = false;                       // earnings detail collapsed by default
 const usageAlerted = { session: false, weekly: false, fable: false }; // one chime per threshold crossing
 
@@ -63,139 +74,42 @@ function money(n) {
   return '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Unix-seconds reset time → compact relative string ("2h 14m", "4d 3h", "now").
-function humanReset(sec) {
-  if (!sec) return '';
-  const ms = sec * 1000 - Date.now();
-  if (ms <= 0) return 'now';
-  const min = Math.round(ms / 60000);
-  if (min < 60) return `${min}m`;
-  const h = Math.floor(min / 60), m = min % 60;
-  if (h < 24) return m ? `${h}h ${m}m` : `${h}h`;
-  const d = Math.floor(h / 24), hh = h % 24;
-  return hh ? `${d}d ${hh}h` : `${d}d`;
-}
-
-// Pace → colour. The bar fill is a solid colour sampled from a continuous
-// green→amber→red scale by how far the fill sits ahead of / behind its time-tick
-// (fill% − elapsed%). Amber sits at dead-on pace (delta 0); the colour ramps to
-// full green PACE_SPAN points behind and full red PACE_SPAN points ahead, so the
-// hue reads the exact margin, not a bucket. Capped / ≥100% pins to full red.
-const PACE_SPAN = 25;                 // points from on-pace to a fully saturated end
-const C_GREEN = [106, 157, 114];      // #6a9d72  — comfortably behind pace
-const C_AMBER = [193, 154, 84];       // #c19a54  — on pace
-const C_RED   = [189, 98, 89];        // #bd6259  — ahead of pace / capped
-function lerpRgb(a, b, t) {
-  return [0, 1, 2].map(i => Math.round(a[i] + (b[i] - a[i]) * t));
-}
-function paceColor(pct, elapsed, capped) {
-  let rgb;
-  if (capped || pct >= 100) rgb = C_RED;
-  else if (elapsed == null) rgb = C_GREEN;
-  else {
-    const t = Math.max(-1, Math.min(1, (pct - elapsed) / PACE_SPAN)); // −1 behind … +1 ahead
-    rgb = t <= 0 ? lerpRgb(C_AMBER, C_GREEN, -t) : lerpRgb(C_AMBER, C_RED, t);
-  }
-  return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
-}
-
-// How far the clock is through this window, 0-100 (null if reset unknown).
-function elapsedOf(w, windowSec) {
-  return w && w.resetsAt
-    ? Math.max(0, Math.min(100, (1 - (w.resetsAt - Date.now() / 1000) / windowSec) * 100))
-    : null;
-}
-
-// One compact usage line: label · bar (fill + time-tick) · % · reset.
-// windowSec sizes the time-tick; the fill + figure take the pace colour.
-function urow(label, w, windowSec) {
-  if (!w || w.pct == null) return '';
-  const width = Math.min(100, Math.max(0, w.pct));
-  const elapsed = elapsedOf(w, windowSec);
-  const tickEl = elapsed != null ? `<div class="umark" style="left:${elapsed}%" title="time so far"></div>` : '';
-  const capped = !!(w.status && !String(w.status).startsWith('allowed'));
-  const color = paceColor(w.pct, elapsed, capped);
-  return `<div class="urow2">
-    <span class="ulab">${label}</span>
-    <div class="ubar">${tickEl}<div class="ufill" style="width:${width}%;background:${color}"></div></div>
-    <span class="upct" style="color:${color}">${Math.round(w.pct)}%</span>
-    <span class="ureset2">${humanReset(w.resetsAt) || ''}</span>
-  </div>`;
-}
-
-// The compact allowance rows (5h · 7d · model-scoped weekly). Each bar's colour
-// (green/amber/red) shows whether that window is ahead of or behind its pace, so
-// the rows convey the grind/ease-off state on their own — no headline line.
-function usageBlock(c) {
-  const u = c.usage;
-  if (!u || (!u.session && !u.weekly && !u.fable)) {
-    return `<div class="csub">${c.usageError ? esc(c.usageError) : 'loading usage…'}</div>`;
-  }
-  return urow('5h', u.session, 5 * 3600)
-    + urow('7d', u.weekly, 7 * 86400)
-    + urow((u.fable && u.fable.model) || 'Fable', u.fable, 7 * 86400)
-    + (u.stale ? `<div class="csub">usage stale — reopen to refresh</div>` : '');
-}
+// The allowance bars used to live here too, but the always-on taskbar strip now
+// carries those windows continuously — repeating them in the panel was the same
+// three numbers twice. What's left is what the strip has no room for: today's
+// throughput and the earnings picture.
 
 // ---- gauges (compact peek) ----
-// A small speedometer per window. The whole arc is one solid colour — the delta
-// colour (green behind pace → amber on pace → red ahead / capped). The needle is
-// the pace delta (fill% − time-tick%): dead-centre (straight up) at 0, swinging
-// left as you fall behind and right as you run ahead, clamped to ±PACE_SPAN over
-// a ±72° sweep. Semicircle: pivot (cx,cy), radius r, angle θ from vertical.
-// 3/4-circle gauge: 270° of arc with a 90° gap at the bottom (label sits in it).
-// Both hands share the ±135° sweep, 0 = straight up. Bold hand = pace delta;
-// thin hand = time through the window (0% → bottom-left, 50% → up, 100% →
-// bottom-right), so a just-restarted window points the thin hand near the bottom.
-const DIAL_SWEEP = 135 * Math.PI / 180;
-function dialTip(pos, len, cx, cy) {
-  const a = Math.max(-1, Math.min(1, pos)) * DIAL_SWEEP;
-  return [cx + len * Math.sin(a), cy - len * Math.cos(a)];
-}
-function dial(label, w, windowSec) {
-  const cx = 30, cy = 26, r = 21;
-  const has = !!(w && w.pct != null);
-  const elapsed = elapsedOf(w, windowSec);
-  const capped = !!(w && w.status && !String(w.status).startsWith('allowed'));
-  const color = has ? paceColor(w.pct, elapsed, capped) : 'var(--dim)';
-  // Big hand reflects the delta proportionally over its true bounds: usage% and
-  // elapsed% each span 0–100, so (usage − elapsed) ∈ [−100, +100]. Mapping that
-  // whole range across the sweep means the hand only reaches an end at the real
-  // extreme (≈never) — it tracks the gradient rather than pegging. (Colour keeps
-  // its own tighter PACE_SPAN scale so "red" still means meaningfully over pace.)
-  const delta = (has && elapsed != null) ? (w.pct - elapsed) / 100 : 0;
-  const [nx, ny] = dialTip(delta, 18, cx, cy);
-  const timeHand = elapsed != null
-    ? (() => { const [tx, ty] = dialTip(elapsed / 50 - 1, 15, cx, cy);
-        return `<line class="dtime" x1="${cx}" y1="${cy}" x2="${tx.toFixed(2)}" y2="${ty.toFixed(2)}"/>`; })()
-    : '';
-  const [sx, sy] = dialTip(-1, r, cx, cy);
-  const [ex, ey] = dialTip(1, r, cx, cy);
-  const arc = `M ${sx.toFixed(2)} ${sy.toFixed(2)} A ${r} ${r} 0 1 1 ${ex.toFixed(2)} ${ey.toFixed(2)}`;
-  return `<div class="dial">
-    <svg viewBox="0 0 60 50">
-      <path class="darc" style="stroke:${color}" d="${arc}"/>
-      ${timeHand}
-      <line class="dneedle" x1="${cx}" y1="${cy}" x2="${nx.toFixed(2)}" y2="${ny.toFixed(2)}"/>
-      <circle class="dhub" cx="${cx}" cy="${cy}" r="2"/>
-      <text class="dlab" x="${cx}" y="44">${label}</text>
-    </svg>
-  </div>`;
+// The dial geometry, pace-rescale and markup live in usage.js so the taskbar
+// strip can render the identical gauge. This view just lays three of them out.
+// (Nothing routes here since the strip took over ambient usage — see cycle() in
+// main.js — but the view still works if it's ever wired back up.)
+function dialData(c) {
+  const u = c.usage;
+  return window.usage.windows(u).map(x => ({ label: x.short, w: x.w, win: x.sec }));
 }
 
-// The gauges peek: three speedometers (5h · 7d · Fable) from the same usage data.
+// The gauges peek: three dials (5h · 7d · Fable) from the same usage data.
+// Elements persist across renders so the hands and the rescale can transition;
+// the skeleton is only rebuilt when the set of dials actually changes.
+let dialSig = null; // signature of what's currently in the DOM (null = not built)
 function renderDials() {
   const c = latestCost;
   if (!c || !c.usage || (!c.usage.session && !c.usage.weekly && !c.usage.fable)) {
     dialsEl.innerHTML = `<div class="dsub" style="width:100%;text-align:center">${c && c.usageError ? esc(c.usageError) : 'loading usage…'}</div>`;
+    dialSig = null;
     return;
   }
-  const u = c.usage;
-  const fableLabel = u.fable && u.fable.model ? u.fable.model.slice(0, 3) : 'Fab';
-  dialsEl.innerHTML =
-    dial('5h', u.session, 5 * 3600)
-    + dial('7d', u.weekly, 7 * 86400)
-    + dial(fableLabel, u.fable, 7 * 86400);
+  const data = dialData(c);
+  const sig = data.map(d => d.label).join('|');
+  if (dialSig === sig) {
+    const els = dialsEl.querySelectorAll('.dial');
+    if (els.length === data.length
+      && data.every((d, i) => window.usage.updateDialEl(els[i], window.usage.dialState(d.w, d.win)))) return;
+  }
+  dialsEl.innerHTML = data.map(d =>
+    `<div class="dial">${window.usage.dialSvg(window.usage.dialState(d.w, d.win), d.label)}</div>`).join('');
+  dialSig = sig;
 }
 
 // Headline earnings line: have Kickbacks covered the seat cost of the days
@@ -277,10 +191,13 @@ function renderCost() {
   const c = latestCost;
   if (!c) { costEl.hidden = true; return; }
   maybeAlert(c);
-  const usage = usageBlock(c) + (usageExpanded ? usageDetail(c) : '');
+  // Today's usage is always open now — with the bars gone there's no collapsed
+  // summary left for a disclosure to toggle.
+  const stale = c.usage && c.usage.stale
+    ? `<div class="csub">usage stale — reopen to refresh</div>` : '';
   const earn = earnLine(c) + (earnExpanded ? earnDetail(c) : '');
   costEl.innerHTML =
-    `<div class="usect" data-sec="usage">${usage}</div>` +
+    `<div class="usect">${usageDetail(c)}${stale}</div>` +
     `<div class="usect" data-sec="earn">${earn}</div>`;
   costEl.classList.remove('refreshing');
   updateCostVisibility();
@@ -306,22 +223,28 @@ function applyView() {
     hudEl.classList.remove('detailing');
     dialsEl.hidden = false;
     renderDials();
+    animateIn(dialsEl);
   } else {
     dialsEl.hidden = true;
-    showList();
+    showList(); // animates the list + cost surfaces in
     renderList();
     renderCost();
   }
 }
 window.hud.onSetView((mode) => { viewMode = mode === 'gauges' ? 'gauges' : 'full'; applyView(); });
 
+// Main drives the flyout: the panel slides up out of the taskbar and back down.
+// Main delays the actual window hide until the 'out' animation has played.
+window.hud.onSlide((dir) => {
+  document.body.classList.toggle('slide-in', dir === 'in');
+});
+
 // Toggle the earnings/pace detail and refresh in the background. Invoked from
 // the drag handler's tap path (a plain click listener is swallowed because the
 // HUD captures the pointer for window-dragging — same reason rows are handled there).
 async function toggleSection(sec) {
   if (!latestCost) return;
-  if (sec === 'usage') usageExpanded = !usageExpanded;
-  else if (sec === 'earn') earnExpanded = !earnExpanded;
+  if (sec === 'earn') earnExpanded = !earnExpanded;
   else return;
   renderCost();
   costEl.classList.add('refreshing');
@@ -339,6 +262,7 @@ function showList() {
   hudEl.classList.remove('detailing');
   hudEl.classList.remove('gauges');
   updateCostVisibility();
+  animateIn(costEl, listEl);
 }
 
 // Tick the ahead count down one-by-one to 0, then pop a green check. The pace
@@ -491,6 +415,7 @@ function showDetail(repo) {
   detailEl.hidden = false;
   hudEl.classList.add('detailing');
   updateCostVisibility();
+  animateIn(detailEl);
 }
 
 // ---- picker ----
@@ -605,12 +530,14 @@ async function openPicker() {
   hudEl.classList.remove('detailing');
   updateCostVisibility();
   await renderPicker();
+  animateIn(pickerEl);
 }
 
 function closePicker() {
   pickerEl.hidden = true;
   listEl.hidden = false;
   updateCostVisibility();
+  animateIn(costEl, listEl);
 }
 
 gearEl.addEventListener('click', () => {

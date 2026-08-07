@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  /* ── git-hud · taskbar strip ──────────────────────────────────────────────
+     An always-on readout parked in the empty corner of the taskbar. Same
+     editorial voice as the HUD, compressed: three usage bars, nothing else.
+     Fully transparent background so it reads as part of the taskbar rather
+     than a window sitting on top of one. */
+  :root {
+    color-scheme: dark;
+    --serif: "Sitka Small", "Sitka Text", Sitka, Georgia, "Times New Roman", serif;
+    --fg:    #e7e8eb;
+    --muted: #9aa0ab;
+    --dim:   #636872;
+    --well:  #2a2d34;   /* bar track — lifted a touch so it reads on the taskbar */
+    --dur-bar: .4s;
+    --dur-dial: .5s;
+    --ease: cubic-bezier(.32, .72, 0, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: transparent; color: var(--fg);
+    font: 11px/1.3 var(--serif);
+    -webkit-user-select: none; -webkit-font-smoothing: antialiased;
+    overflow: hidden; cursor: pointer;
+  }
+  /* Horizontal inset matches Windows' own taskbar metric: a 24px content band
+     centred in the 48px bar, i.e. 12px all round. The vertical inset is handled
+     by JS (padding-top absorbs the off-band overhang, then the rows centre in
+     what's left), so the bars land dead-centre of the taskbar like tray icons. */
+  body { display: flex; flex-direction: column; justify-content: center;
+    padding: 0 12px; }
+  #rows { display: flex; flex-direction: column; gap: 3px; width: 100%; }
+
+  .r { display: flex; align-items: center; gap: 7px; }
+  .l { font-variant: all-small-caps; letter-spacing: .4px; color: var(--dim);
+    font-size: 9px; line-height: 1; font-weight: 600; flex: 0 0 23px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .b { position: relative; flex: 1 1 auto; height: 4px; background: var(--well);
+    overflow: hidden; }
+  .f { height: 100%; width: 0; transition: width var(--dur-bar) var(--ease),
+    background-color var(--dur-bar) var(--ease); }
+  /* 1px mark = how far the clock is through this window; fill past it = ahead of pace */
+  .t { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -1px;
+    background: var(--fg); opacity: .75; z-index: 2;
+    transition: left var(--dur-bar) var(--ease); }
+  .p { font-variant-numeric: lining-nums tabular-nums; font-weight: 700;
+    font-size: 9.5px; line-height: 1; flex: 0 0 auto; min-width: 24px; text-align: right;
+    transition: color var(--dur-bar) var(--ease); }
+
+  #msg { color: var(--dim); font-style: italic; font-size: 9px; text-align: center; }
+
+  /* ── dial variant ───────────────────────────────────────────────────────
+     Three gauges in a single row. Width is plentiful here and height is not,
+     so the label + figure sit *beside* each dial rather than beneath it, and
+     the arc's bottom gap is left empty (usage.js omits the in-arc label). */
+  /* Grouped, not spread: they read as one cluster anchored in the corner
+     rather than three items floating across the strip. */
+  .dials { display: flex; align-items: center; justify-content: flex-start;
+    gap: 14px; width: 100%; }
+  .du { display: flex; align-items: center; gap: 6px; }
+  .du .dial { flex: 0 0 auto; }
+  .du svg { width: 44px; height: 35px; display: block; overflow: visible;
+    /* The taskbar is a busy, semi-transparent surface — lift the gauge off it.
+       Saturation + a tight dark shadow do more for legibility at this size than
+       any stroke change, and keep the pace hues identical to the HUD's. */
+    filter: saturate(1.25) brightness(1.12) drop-shadow(0 1px 1px rgba(0,0,0,.6)); }
+  /* usage % over time-to-reset, right of each dial */
+  /* Sized for the widest content now possible: "100" and "4.21". */
+  .du .dmeta { display: flex; flex-direction: column; gap: 2px; line-height: 1;
+    min-width: 26px; }
+  .du .dp { font-variant-numeric: lining-nums tabular-nums; font-weight: 700;
+    font-size: 11.5px; transition: color var(--dur-bar) var(--ease);
+    text-shadow: 0 1px 1px rgba(0,0,0,.55); }
+  .du .dr { font-variant-numeric: lining-nums tabular-nums; color: var(--dim);
+    font-size: 9px; font-style: italic; white-space: nowrap; }
+  /* single-char window id, seated in the arc's bottom gap. Sized in viewBox
+     units (60 wide rendered at 44px), so 12 lands at ~9px on screen. */
+  .du text.dlab { fill: var(--muted); font-size: 12px; font-weight: 600;
+    text-anchor: middle; }
+
+  /* Strokes are in a 60-unit viewBox rendered at 38px (~0.63×), so these are
+     deliberately heavy — they land near 3px / 1.6px on screen. */
+  .darc { fill: none; stroke-width: 5.5; stroke-linecap: round;
+    transition: stroke var(--dur-bar) var(--ease); }
+  .dtime { stroke: #cfd4dc; stroke-width: 1.6; stroke-linecap: round; opacity: .85; }
+  .dneedle { stroke: #ffffff; stroke-width: 2.6; stroke-linecap: round; }
+  .dhub { fill: #ffffff; }
+  .dbreak { stroke: rgba(0,0,0,.85); stroke-width: 1.8; stroke-linecap: butt;
+    transition: opacity var(--dur-bar) var(--ease); }
+  /* hands rotate about the hub so only `transform` animates */
+  .dhand { transform-box: view-box; transform-origin: 30px 26px;
+    transition: transform var(--dur-dial) var(--ease); }
+  @media (prefers-reduced-motion: reduce) {
+    .dhand, .darc, .dbreak, .du .dp { transition-duration: 0s; }
+  }
+
+  /* Entrance + hover feedback: the strip is clickable (opens the full HUD). */
+  body { transition: opacity .18s var(--ease); }
+  body.dim { opacity: .82; }
+  @media (prefers-reduced-motion: reduce) {
+    .f, .t, .p, body { transition-duration: 0s; }
+  }
+</style>
+</head>
+<body>
+  <div id="rows"></div>
+  <script src="usage.js"></script>
+  <script src="strip.js"></script>
+</body>
+</html>
