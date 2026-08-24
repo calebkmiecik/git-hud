@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseBranch, parseDirty, parseAheadBehind } = require('../src/git');
+const { parseBranch, parseDirty, parseChangedCount, parseCommitTime, parseAheadBehind } = require('../src/git');
 
 test('parseBranch returns branch name', () => {
   assert.equal(parseBranch('feature/x\n', 'abc1234'), 'feature/x');
@@ -31,4 +31,27 @@ test('parseAheadBehind null when no upstream (empty)', () => {
 
 test('parseAheadBehind null when non-numeric (NaN guard)', () => {
   assert.equal(parseAheadBehind('foo\tbar\n'), null);
+});
+
+test('parseChangedCount counts one line per changed path', () => {
+  assert.equal(parseChangedCount(' M src/a.js\n?? b.txt\n M src/c.js\n'), 3);
+});
+
+test('parseChangedCount is 0 for a clean tree', () => {
+  assert.equal(parseChangedCount(''), 0);
+  assert.equal(parseChangedCount('\n  \n'), 0);
+});
+
+test('parseChangedCount tolerates CRLF', () => {
+  assert.equal(parseChangedCount(' M a\r\n?? b\r\n'), 2);
+});
+
+test('parseCommitTime reads unix seconds', () => {
+  assert.equal(parseCommitTime('1717171717\n'), 1717171717);
+});
+
+test('parseCommitTime returns null for an empty repo or junk', () => {
+  assert.equal(parseCommitTime(''), null);
+  assert.equal(parseCommitTime('nope'), null);
+  assert.equal(parseCommitTime('0'), null);
 });

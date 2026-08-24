@@ -11,7 +11,8 @@ const { githubUrlFromRemote, resolveOpenCommand } = require('./open');
 const { getRepoDetail } = require('./gitDetail');
 const { RepoMonitor } = require('./monitor');
 const { discoverRepos } = require('./discovery');
-const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot, getBase, setBase } = require('./state');
+const { loadState, saveState, isEnabled, setEnabled, addRoot, removeRoot, getBase, setBase,
+  getSections, setSectionOn } = require('./state');
 const { getCostSnapshot, pollDelayFor } = require('./costTracker');
 const earningsStore = require('./earningsStore');
 
@@ -32,17 +33,6 @@ let costTimer = null;
 let costBusy = false;
 let lastSnapshot = null;
 let hudMode = 'hidden'; // hidden | gauges (compact peek) | full — cycled by the hotkey
-
-function positionFor(position, width, height) {
-  const { workArea } = screen.getPrimaryDisplay();
-  const margin = 16;
-  const left = position.includes('left');
-  const top = position.includes('top');
-  return {
-    x: left ? workArea.x + margin : workArea.x + workArea.width - width - margin,
-    y: top ? workArea.y + margin : workArea.y + workArea.height - height - margin,
-  };
-}
 
 function createWindow() {
   const { x, y, width, height } = hudAnchorBounds('full');
@@ -196,7 +186,7 @@ function pushUpdate() {
   const arr = enabledRepos().map(
     p => states.get(p) || { path: p, name: path.basename(p), branch: null, loading: true }
   );
-  win.webContents.send('hud:update', { repos: arr, error: cfgError });
+  win.webContents.send('hud:update', { repos: arr, error: cfgError, sections: getSections(state) });
 }
 
 // Compute today's Claude spend + Kickbacks earnings and push to the renderer.
@@ -348,25 +338,22 @@ function createTray() {
   }
 }
 
-// Size + position the window for a view: gauges is a compact top strip, full is
-// the tall panel. resizable is false, so flip it around setBounds.
+// Size + position the window for a view, always at the anchor.
+// resizable is false, so flip it around setBounds.
 function resizeForMode(mode) {
   if (!win) return;
-  const [w, h] = mode === 'gauges' ? [272, 128] : [320, 520];
-  const { x, y } = positionFor(cfg.window.position, w, h);
   win.setResizable(true);
-  win.setBounds({ x, y, width: w, height: h });
+  win.setBounds(hudAnchorBounds(mode));
   win.setResizable(false);
 }
 
-// Park the panel directly above the strip so it can slide out of the taskbar.
-// The window's *bottom edge sits on the taskbar's top edge*, which is what makes
-// the slide work: content translated below that edge is clipped by the window
-// and genuinely appears to emerge from behind the bar. Falls back to the plain
-// corner placement when the strip is off.
+// The panel is permanently parked in the strip's corner — it isn't movable, so
+// there is exactly one place it can be. The window's *bottom edge sits on the
+// taskbar's top edge*, which is what makes the slide work: content translated
+// below that edge is clipped by the window and genuinely appears to emerge from
+// behind the bar.
 function hudAnchorBounds(mode) {
   const [w, h] = mode === 'gauges' ? [272, 128] : [320, 520];
-  if (!cfg.strip.enabled) return { ...positionFor(cfg.window.position, w, h), width: w, height: h };
   const d = screen.getPrimaryDisplay();
   const b = d.bounds;
   const tb = taskbarRect();
@@ -570,7 +557,7 @@ app.whenReady().then(() => {
   // Picker: rescan and return discovered repos grouped by root + enabled flags + roots.
   ipcMain.handle('hud:getPicker', () => {
     rescan();
-    return { groups, enabled: state.enabled, roots: state.roots };
+    return { groups, enabled: state.enabled, roots: state.roots, sections: getSections(state) };
   });
 
   // Add a root folder via a native directory picker.
@@ -585,11 +572,12 @@ app.whenReady().then(() => {
       rescan();
       reconcile();
     }
-    return { groups, enabled: state.enabled, roots: state.roots };
+    return { groups, enabled: state.enabled, roots: state.roots, sections: getSections(state) };
   });
 
-  // Clicking the taskbar strip opens the full HUD (and focuses it).
-  ipcMain.on('strip:openHud', () => showMode('full'));
+  // Clicking the taskbar strip toggles the panel, same as the hotkey — the
+  // strip is the panel's handle, so a second click has to put it away again.
+  ipcMain.on('strip:toggleHud', () => cycle());
 
   // Right-click the strip for its own menu. The window is deliberately
   // non-focusable (so it never steals focus while you type), but a popup menu
@@ -616,20 +604,25 @@ app.whenReady().then(() => {
     });
   });
 
-  // Manual window drag (we don't use an OS drag region so DOM hover works).
-  ipcMain.handle('hud:winPos', () => (win ? win.getPosition() : [0, 0]));
-  ipcMain.on('hud:moveWin', (_e, x, y) => { if (win) win.setPosition(Math.round(x), Math.round(y)); });
-
   // Remove a root folder.
   ipcMain.handle('hud:removeRoot', (_e, rootPath) => {
     removeRoot(state, rootPath);
     saveState(dataDir, state);
     rescan();
     reconcile();
-    return { groups, enabled: state.enabled, roots: state.roots };
+    return { groups, enabled: state.enabled, roots: state.roots, sections: getSections(state) };
   });
 
   // Toggle a repo on/off, persist, and reconcile monitors.
+  // Show/hide a panel section (repos · usage · kickbacks) from the settings view.
+  ipcMain.handle('hud:setSection', (_e, key, on) => {
+    setSectionOn(state, key, on);
+    saveState(dataDir, state);
+    pushUpdate();               // panel re-renders with the new visibility
+    pushCost({ force: false }); // …and the cost block follows suit
+    return getSections(state);
+  });
+
   ipcMain.handle('hud:setEnabled', (_e, repoPath, on) => {
     setEnabled(state, repoPath, on);
     saveState(dataDir, state);

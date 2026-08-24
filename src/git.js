@@ -13,6 +13,20 @@ function parseDirty(porcelainStdout) {
   return porcelainStdout.trim().length > 0;
 }
 
+// How many paths `status --porcelain` reports — one line each, so "3 changed"
+// instead of a bare dirty flag. Renames appear as a single line, which is right:
+// it's one path the user has to deal with.
+function parseChangedCount(porcelainStdout) {
+  const s = porcelainStdout.replace(/\r/g, '').trim();
+  return s ? s.split('\n').filter(Boolean).length : 0;
+}
+
+// `log -1 --format=%ct` → unix seconds, or null on an empty repo / bad output.
+function parseCommitTime(stdout) {
+  const n = Number(String(stdout).trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function parseAheadBehind(revListStdout) {
   const line = revListStdout.trim();
   if (!line) return null;
@@ -34,7 +48,9 @@ async function getRepoState(repoPath) {
     const shortSha = (await git(repoPath, ['rev-parse', '--short', 'HEAD'])).trim();
     const branch = parseBranch(abbrev, shortSha);
     const detached = abbrev.trim() === 'HEAD';
-    const dirty = parseDirty(await git(repoPath, ['status', '--porcelain']));
+    const porcelain = await git(repoPath, ['status', '--porcelain']);
+    const dirty = parseDirty(porcelain);
+    const changed = parseChangedCount(porcelain);
 
     let ahead = null, behind = null;
     try {
@@ -43,14 +59,24 @@ async function getRepoState(repoPath) {
       if (ab) { ahead = ab.ahead; behind = ab.behind; }
     } catch { /* no upstream */ }
 
-    return { path: repoPath, name, branch, detached, dirty, ahead, behind, error: null };
+    // Absent on a repo with no commits yet.
+    let committedAt = null;
+    try { committedAt = parseCommitTime(await git(repoPath, ['log', '-1', '--format=%ct'])); }
+    catch { /* empty repo */ }
+
+    return { path: repoPath, name, branch, detached, dirty, changed, committedAt,
+             ahead, behind, error: null };
   } catch (e) {
     // A failed spawn (ENOENT on the binary) => git missing. A non-zero git exit
     // (numeric e.code / stderr) => the path isn't a usable git repo.
     const gitMissing = e.code === 'ENOENT' && /spawn/i.test(e.syscall || '');
     return { path: repoPath, name, branch: null, detached: false, dirty: false,
+             changed: 0, committedAt: null,
              ahead: null, behind: null, error: gitMissing ? 'git not found' : 'not a git repo' };
   }
 }
 
-module.exports = { parseBranch, parseDirty, parseAheadBehind, getRepoState };
+module.exports = {
+  parseBranch, parseDirty, parseChangedCount, parseCommitTime,
+  parseAheadBehind, getRepoState,
+};

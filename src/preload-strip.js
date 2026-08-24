@@ -15,6 +15,6 @@ contextBridge.exposeInMainWorld('strip', {
     ipcRenderer.removeAllListeners('strip:style');
     ipcRenderer.on('strip:style', (_e, s) => cb(s));
   },
-  openHud: () => ipcRenderer.send('strip:openHud'),
+  toggleHud: () => ipcRenderer.send('strip:toggleHud'),
   menu: () => ipcRenderer.send('strip:menu'),
 });

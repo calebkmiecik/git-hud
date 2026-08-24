@@ -6,7 +6,9 @@ const DEFAULTS = {
   hotkey: 'Control+Alt+G',
   pollIntervalMs: 20000,
   startVisible: false,
-  window: { position: 'top-right', opacity: 1 },
+  // The panel is anchored to the strip's corner and isn't movable, so there's
+  // no position here — only how solid it looks.
+  window: { opacity: 1 },
   agentPort: 47600,
   // Poll cadence for live usage (each poll is one tiny Haiku call; only while
   // the HUD is visible). Adaptive: usagePollMs when comfortable, ramping down to
@@ -50,7 +52,6 @@ function applyDefaults(raw) {
     pollIntervalMs: Number.isFinite(r.pollIntervalMs) ? r.pollIntervalMs : DEFAULTS.pollIntervalMs,
     startVisible: typeof r.startVisible === 'boolean' ? r.startVisible : DEFAULTS.startVisible,
     window: {
-      position: r.window?.position || DEFAULTS.window.position,
       opacity: Number.isFinite(r.window?.opacity) ? r.window.opacity : DEFAULTS.window.opacity,
     },
     agentPort: Number.isFinite(r.agentPort) ? r.agentPort : DEFAULTS.agentPort,
@@ -94,7 +95,12 @@ function applyDefaults(raw) {
 function loadConfig(dir) {
   const file = path.join(dir, 'config.json');
   try {
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    // Strip a leading UTF-8 BOM before parsing. JSON.parse rejects it outright,
+    // and plenty of Windows editors (Notepad, PowerShell's Set-Content -Encoding
+    // utf8) add one silently — which reads as "config.json malformed" and drops
+    // every setting back to defaults for a reason the user can't see.
+    const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '');
+    const raw = JSON.parse(text);
     return { config: applyDefaults(raw), error: null };
   } catch (e) {
     let reason;

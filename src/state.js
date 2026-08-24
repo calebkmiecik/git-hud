@@ -44,6 +44,27 @@ function removeRoot(state, rootPath) {
   return state;
 }
 
+// Which panel sections are shown, toggled from the settings view. Default-on:
+// an absent entry means "show", so an older state.json doesn't hide anything.
+const SECTIONS = ['repos', 'usage', 'kickbacks'];
+
+function isSectionOn(state, key) {
+  return state.sections?.[key] !== false;
+}
+
+function setSectionOn(state, key, on) {
+  if (!SECTIONS.includes(key)) return state;
+  if (!state.sections) state.sections = {};
+  if (on) delete state.sections[key];
+  else state.sections[key] = false;
+  return state;
+}
+
+// { repos: true, usage: false, ... } for every known section.
+function getSections(state) {
+  return Object.fromEntries(SECTIONS.map(k => [k, isSectionOn(state, k)]));
+}
+
 // Manual compare-branch override, per repo. null/absent = auto-detect.
 function getBase(state, repoPath) {
   return (state.base && state.base[repoPath]) || null;
@@ -59,4 +80,5 @@ function setBase(state, repoPath, branch) {
 module.exports = {
   statePath, loadState, saveState, isEnabled, setEnabled,
   addRoot, removeRoot, getBase, setBase,
+  SECTIONS, isSectionOn, setSectionOn, getSections,
 };

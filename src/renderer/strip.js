@@ -117,10 +117,10 @@ function paint(payload) {
 window.strip.onCost(paint);
 window.strip.onStyle((s) => { style = s === 'dials' ? 'dials' : 'bars'; paint(null); });
 
-// The whole strip is one click target: left opens the full HUD, right opens a
-// context menu (style switch etc.) — the tray icon is easy to lose in Windows'
-// hidden-icons overflow, so the strip carries its own menu.
-document.body.addEventListener('click', (e) => { if (e.button === 0) window.strip.openHud(); });
+// The whole strip is one click target: left toggles the panel (same as the
+// hotkey), right opens a context menu (style switch etc.) — the tray icon is
+// easy to lose in Windows' hidden-icons overflow, so the strip carries its own.
+document.body.addEventListener('click', (e) => { if (e.button === 0) window.strip.toggleHud(); });
 document.body.addEventListener('contextmenu', (e) => { e.preventDefault(); window.strip.menu(); });
 document.body.addEventListener('mouseenter', () => document.body.classList.add('dim'));
 document.body.addEventListener('mouseleave', () => document.body.classList.remove('dim'));

@@ -6,10 +6,14 @@ const gearEl = document.getElementById('gear');
 const costEl = document.getElementById('cost');
 const dialsEl = document.getElementById('dials');
 let viewMode = 'full'; // 'full' | 'gauges' — driven by main via hud:setView
+const SLIDE_MS = 260;  // matches --dur-slide / SLIDE_MS in main.js
+let sliding = false;   // true while the panel is sliding in or out
 
 let reposByPath = new Map(); // path -> latest repo state, for opening the detail view
 let latestRepos = [];        // last payload, so agent events can re-render the list
 let latestError = null;
+// Which panel sections are shown; driven by the toggles in the settings view.
+let sections = { repos: true, usage: true, kickbacks: true };
 const attention = new Map();  // repoPath -> 'attn' | 'turn' (agent-event row highlight)
 const turnTimers = new Map(); // repoPath -> timeout ('turn' highlight auto-expires)
 
@@ -21,6 +25,9 @@ function esc(s) {
 // surfaces persist in the DOM, so the class has to be cleared and re-applied
 // (with a reflow between) or the animation only ever runs on first paint.
 function animateIn(...els) {
+  // While the whole panel is sliding out of the taskbar, skip the per-surface
+  // entrance — two motions at once reads as fussy, and the slide is the point.
+  if (sliding) return;
   for (const el of els) {
     if (!el || el.hidden) continue;
     el.classList.remove('vin');
@@ -37,32 +44,64 @@ function abText(r) {
   return parts.join(' ');
 }
 
+// Unix seconds → "20m" / "2h" / "4d" / "3w". Coarse on purpose: the useful
+// question is "have I touched this lately", not the exact minute.
+function sinceText(sec) {
+  if (!sec) return '';
+  const min = Math.floor((Date.now() / 1000 - sec) / 60);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 14) return `${d}d`;
+  return `${Math.floor(d / 7)}w`;
+}
+
+// The under-row: what's outstanding here, in reading order — uncommitted work,
+// then unpushed/unpulled commits, then how long since the last commit.
+function metaHtml(r) {
+  const bits = [];
+  if (r.changed > 0) bits.push(`<span class="m-chg">${r.changed} changed</span>`);
+  if (r.ahead) bits.push(`<span class="m-ab">↑${r.ahead}</span>`);
+  if (r.behind) bits.push(`<span class="m-ab down">↓${r.behind}</span>`);
+  if (!bits.length) bits.push('<span class="m-clean">clean</span>');
+  const when = sinceText(r.committedAt);
+  if (when) bits.push(`<span class="m-when">${esc(when)}</span>`);
+  return `<div class="rmeta">${bits.join('<span class="m-sep">·</span>')}</div>`;
+}
+
 function rowHtml(r) {
   if (r.loading) return `<div class="row"><span class="name">${esc(r.name)}</span><span class="loading">…</span></div>`;
   if (r.error) return `<div class="row"><span class="dot dirty"></span><span class="name">${esc(r.name)}</span><span class="err">${esc(r.error)}</span></div>`;
   const att = attention.get(r.path);
   const attClass = att === 'attn' ? ' att-attn' : att === 'turn' ? ' att-turn' : '';
   return `<div class="row${attClass}" data-path="${esc(r.path)}">
-    <span class="dot ${r.dirty ? 'dirty' : 'clean'}"></span>
-    <span class="name">${esc(r.name)}</span>
-    <span class="branch">${esc(r.branch)}</span>
-    <span class="ab">${esc(abText(r))}</span>
+    <div class="rtop">
+      <span class="dot ${r.dirty ? 'dirty' : 'clean'}"></span>
+      <span class="name">${esc(r.name)}</span>
+      <span class="branch">${esc(r.branch)}</span>
+    </div>
+    ${metaHtml(r)}
   </div>`;
 }
 
 function renderList() {
   const banner = latestError ? `<div class="banner">${esc(latestError)}</div>` : '';
+  if (!sections.repos) { listEl.innerHTML = banner; return; }
   const rows = latestRepos.length
     ? latestRepos.map(rowHtml).join('')
     : '<div class="row loading">No repos selected — click ⚙</div>';
   listEl.innerHTML = banner + rows;
 }
 
-window.hud.onUpdate(({ repos, error }) => {
+window.hud.onUpdate(({ repos, error, sections: s }) => {
   latestRepos = repos;
   latestError = error;
+  if (s) sections = s;
   reposByPath = new Map(repos.map(r => [r.path, r]));
   renderList();
+  renderCost(); // section visibility may have changed
 });
 
 // ---- cost/usage bar ----
@@ -195,17 +234,19 @@ function renderCost() {
   // summary left for a disclosure to toggle.
   const stale = c.usage && c.usage.stale
     ? `<div class="csub">usage stale — reopen to refresh</div>` : '';
-  const earn = earnLine(c) + (earnExpanded ? earnDetail(c) : '');
-  costEl.innerHTML =
-    `<div class="usect">${usageDetail(c)}${stale}</div>` +
-    `<div class="usect" data-sec="earn">${earn}</div>`;
+  const usageHtml = sections.usage
+    ? `<div class="usect">${usageDetail(c)}${stale}</div>` : '';
+  const earnHtml = sections.kickbacks
+    ? `<div class="usect" data-sec="earn">${earnLine(c) + (earnExpanded ? earnDetail(c) : '')}</div>` : '';
+  costEl.innerHTML = usageHtml + earnHtml;
   costEl.classList.remove('refreshing');
   updateCostVisibility();
 }
 
-// The cost bar belongs to the list view only — hide it behind picker/detail.
+// The cost bar belongs to the list view only — hide it behind picker/detail,
+// and when both of its sections are switched off there's nothing to show.
 function updateCostVisibility() {
-  costEl.hidden = !latestCost || listEl.hidden;
+  costEl.hidden = !latestCost || listEl.hidden || (!sections.usage && !sections.kickbacks);
 }
 
 window.hud.onCost((payload) => {
@@ -235,7 +276,13 @@ window.hud.onSetView((mode) => { viewMode = mode === 'gauges' ? 'gauges' : 'full
 
 // Main drives the flyout: the panel slides up out of the taskbar and back down.
 // Main delays the actual window hide until the 'out' animation has played.
+// `sliding` suppresses the inner per-surface entrances for the duration, so the
+// open reads as one motion instead of several competing ones.
+let slideTimer = 0;
 window.hud.onSlide((dir) => {
+  sliding = true;
+  clearTimeout(slideTimer);
+  slideTimer = setTimeout(() => { sliding = false; }, SLIDE_MS);
   document.body.classList.toggle('slide-in', dir === 'in');
 });
 
@@ -432,7 +479,22 @@ function relName(root, p) {
   return r || baseName(p);
 }
 
-function paintPicker({ groups, enabled }) {
+// Panel sections the user can switch off (they're duplicated elsewhere, or just
+// not interesting to everyone) — rendered at the top of the settings view.
+const SECTION_LABELS = [
+  ['repos', 'Repos'],
+  ['usage', "Today's usage"],
+  ['kickbacks', 'Kickbacks'],
+];
+
+function sectionsHtml(secs) {
+  const boxes = SECTION_LABELS.map(([key, label]) =>
+    `<label class="opt"><input type="checkbox" data-section="${key}" ${secs[key] !== false ? 'checked' : ''}/> ${label}</label>`
+  ).join('');
+  return `<div class="phead">Show in panel</div>${boxes}`;
+}
+
+function paintPicker({ groups, enabled, sections: secs }) {
   const groupsHtml = groups.length
     ? groups.map(g => {
         const repos = g.repos.length
@@ -444,11 +506,17 @@ function paintPicker({ groups, enabled }) {
         return `<div class="root"><span class="rootpath">${esc(g.root)}</span><button class="rm" data-root="${esc(g.root)}" title="Remove folder">&times;</button></div>${repos}`;
       }).join('')
     : '<div class="empty">No folders yet — add one below.</div>';
-  pickerEl.innerHTML = '<div class="phead">Tracked folders</div>' + groupsHtml
+  pickerEl.innerHTML = sectionsHtml(secs || {})
+    + '<div class="phead pgap">Tracked folders</div>' + groupsHtml
     + '<button id="addRoot">+ Add folder…</button>';
 
-  pickerEl.querySelectorAll('input[type=checkbox]').forEach(cb => {
+  pickerEl.querySelectorAll('input[data-path]').forEach(cb => {
     cb.addEventListener('change', () => window.hud.setEnabled(cb.dataset.path, cb.checked));
+  });
+  pickerEl.querySelectorAll('input[data-section]').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      sections = await window.hud.setSection(cb.dataset.section, cb.checked);
+    });
   });
   pickerEl.querySelectorAll('.rm').forEach(btn => {
     btn.addEventListener('click', async () => paintPicker(await window.hud.removeRoot(btn.dataset.root)));
@@ -462,65 +530,30 @@ async function renderPicker() {
   paintPicker(await window.hud.getPicker());
 }
 
-// ---- drag the window / click a row (pointer capture so it can't outrun the cursor) ----
-// The whole HUD is the drag surface, so we distinguish a click (open the repo's
-// detail view) from a drag (move the window) by a small movement threshold.
-const DRAG_THRESHOLD = 4; // px of total travel before it counts as a drag
-let drag = null;
-let rafId = 0;
-let pendingPos = null;
-
-function flushMove() {
-  rafId = 0;
-  if (pendingPos) window.hud.moveWin(pendingPos[0], pendingPos[1]);
-}
-
-hudEl.addEventListener('pointerdown', (e) => {
+// ---- clicks ----
+// The panel is fixed above the strip and no longer draggable, so these are
+// plain clicks. They used to be routed through the drag handler's tap path,
+// which existed only because the window captured the pointer to move itself.
+hudEl.addEventListener('click', (e) => {
   if (e.button !== 0) return;
   if (e.target.closest('button, input, label, a')) return; // let controls work
-  const pid = e.pointerId, sx = e.screenX, sy = e.screenY;
-  const row = e.target.closest('.row[data-path]');
+
   const secEl = e.target.closest('[data-sec]');
-  hudEl.setPointerCapture(pid);
-  drag = { sx, sy, wx: null, wy: null, pid, moved: false, row, sec: secEl ? secEl.dataset.sec : null };
-  window.hud.getWinPos().then(([wx, wy]) => { if (drag) { drag.wx = wx; drag.wy = wy; } });
-});
+  if (secEl && !costEl.hidden) { toggleSection(secEl.dataset.sec); return; }
 
-hudEl.addEventListener('pointermove', (e) => {
-  if (!drag) return;
-  if (!drag.moved) {
-    if (Math.abs(e.screenX - drag.sx) + Math.abs(e.screenY - drag.sy) < DRAG_THRESHOLD) return;
-    drag.moved = true;
+  const row = e.target.closest('.row[data-path]');
+  if (!row || listEl.hidden) return;
+  const repo = reposByPath.get(row.dataset.path);
+  if (!repo) return;
+  // A notifying row jumps straight to its VS Code window (focuses the open
+  // folder) and clears the highlight; otherwise it drills into the detail view.
+  if (attention.has(repo.path)) {
+    window.hud.openExternal(repo.path, 'editor');
+    clearAttention(repo.path);
+  } else {
+    showDetail(repo);
   }
-  if (drag.wx == null) return; // window position not resolved yet
-  pendingPos = [drag.wx + (e.screenX - drag.sx), drag.wy + (e.screenY - drag.sy)];
-  if (!rafId) rafId = requestAnimationFrame(flushMove);
 });
-
-function endDrag() {
-  if (!drag) return;
-  try { hudEl.releasePointerCapture(drag.pid); } catch {}
-  const { moved, row, sec } = drag;
-  drag = null;
-  // A tap (no real movement) on a cost section toggles that section's detail.
-  if (!moved && sec && !costEl.hidden) { toggleSection(sec); return; }
-  // A click (no real movement) on a row, while the list is showing, drills in.
-  if (!moved && row && !listEl.hidden) {
-    const repo = reposByPath.get(row.dataset.path);
-    if (repo) {
-      // A notifying row jumps straight to its VS Code window (focuses the open
-      // folder) and clears the highlight; otherwise it drills into the detail view.
-      if (attention.has(repo.path)) {
-        window.hud.openExternal(repo.path, 'editor');
-        clearAttention(repo.path);
-      } else {
-        showDetail(repo);
-      }
-    }
-  }
-}
-hudEl.addEventListener('pointerup', endDrag);
-hudEl.addEventListener('pointercancel', endDrag);
 
 async function openPicker() {
   if (!pickerEl.hidden) return; // already open or opening

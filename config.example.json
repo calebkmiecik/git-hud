@@ -4,7 +4,6 @@
   "pollIntervalMs": 20000,
   "startVisible": false,
   "window": {
-    "position": "top-right",
     "opacity": 1
   },
   "agentPort": 47600,

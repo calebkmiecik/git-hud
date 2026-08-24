@@ -45,7 +45,7 @@
   /* Panel: flat opaque slab, hard edges, one tight dark shadow. */
   #hud { position: relative; background: var(--bg);
     border: 1px solid var(--edge); border-radius: 5px;
-    padding: 11px 13px; max-height: 92vh; overflow-y: auto; cursor: move;
+    padding: 11px 13px; max-height: 92vh; overflow-y: auto;
     box-shadow: 0 2px 10px rgba(0,0,0,0.55);
     flex: 1 1 auto;
     /* Parked below the window edge (behind the taskbar) until told to slide. */
@@ -66,7 +66,7 @@
     font-size: 13px; line-height: 1; background: none; border: none; padding: 2px;
     opacity: 0; pointer-events: none;
     transition: opacity .15s ease, color .15s ease;
-    -webkit-app-region: no-drag; z-index: 6; }
+    z-index: 6; }
   #gear:hover { color: var(--accent); }
   #hud:hover #gear { opacity: 1; pointer-events: auto; }
 
@@ -79,7 +79,7 @@
   .sec::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--line); }
 
   /* ── cost / usage panel ───────────────────────────────────────────────── */
-  #cost { -webkit-app-region: no-drag; cursor: pointer; padding: 1px 1px 11px; margin-bottom: 10px;
+  #cost { cursor: pointer; padding: 1px 1px 11px; margin-bottom: 10px;
     border-bottom: 1px solid var(--rule); }
   #cost.refreshing { opacity: .55; }
   #cost .crow { display: flex; align-items: baseline; gap: 8px; padding: 1px 2px; }
@@ -130,9 +130,20 @@
 
   /* ── repo list ────────────────────────────────────────────────────────── */
   .row { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; }
-  .row[data-path] { cursor: pointer; padding: 4px 7px; margin: 0 -7px;
+  .row[data-path] { display: block; cursor: pointer; padding: 5px 7px; margin: 0 -7px;
     border-left: 2px solid transparent; transition: background .12s ease, border-color .12s ease; }
   .row[data-path]:hover { background: var(--raise); border-left-color: var(--accent); }
+  .rtop { display: flex; align-items: baseline; gap: 10px; }
+  /* under-row: what's outstanding, aligned past the status dot */
+  .rmeta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px;
+    padding-left: 16px; margin-top: 1px; font-size: 10.5px; color: var(--dim);
+    font-variant-numeric: lining-nums tabular-nums; }
+  .rmeta .m-sep { color: var(--line); }
+  .rmeta .m-chg { color: var(--amber); }
+  .rmeta .m-ab { color: var(--accent); font-weight: 600; }
+  .rmeta .m-ab.down { color: var(--steel); }
+  .rmeta .m-clean { color: var(--dim); font-style: italic; }
+  .rmeta .m-when { color: var(--dim); }
   .dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; align-self: center; }
   .clean { background: var(--green); }
   .dirty { background: var(--amber); }
@@ -148,25 +159,26 @@
     border-left: 2px solid var(--accent); background: var(--well); font-style: italic; }
 
   /* ── picker ───────────────────────────────────────────────────────────── */
-  #picker { -webkit-app-region: no-drag; padding-right: 18px; }
+  #picker { padding-right: 18px; }
   #picker .phead { font-variant: all-small-caps; letter-spacing: .8px; font-size: 11px; font-weight: 600;
     color: var(--muted); display: flex; align-items: center; gap: 10px;
     padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--rule); }
+  #picker .phead.pgap { margin-top: 16px; }
   #picker .root { display: flex; align-items: flex-start; gap: 6px; margin: 13px 0 4px; }
   #picker .rootpath { color: var(--accent); font-size: 11.5px; font-weight: 600; flex: 1 1 auto;
     word-break: break-all; }
   #picker .rootpath::before { content: "— "; color: var(--dim); }
-  #picker .rm { -webkit-app-region: no-drag; flex: 0 0 auto; background: none; border: none;
+  #picker .rm { flex: 0 0 auto; background: none; border: none;
     color: var(--dim); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px;
     transition: color .12s ease; }
   #picker .rm:hover { color: var(--red); }
   #picker .opt { display: flex; align-items: center; gap: 10px; padding: 4px 7px; margin: 0 -7px;
     cursor: pointer; transition: background .12s ease; }
   #picker .opt:hover { background: var(--raise); }
-  #picker .opt input { -webkit-app-region: no-drag; margin: 0; width: 13px; height: 13px;
+  #picker .opt input { margin: 0; width: 13px; height: 13px;
     accent-color: var(--accent); cursor: pointer; }
   #picker .empty { color: var(--dim); padding: 3px 7px; font-style: italic; }
-  #addRoot { -webkit-app-region: no-drag; display: block; width: 100%; margin-top: 12px;
+  #addRoot { display: block; width: 100%; margin-top: 12px;
     padding: 9px 7px 2px; background: none; color: var(--dim); border: none;
     border-top: 1px solid var(--rule); cursor: pointer; font: inherit; font-size: 11.5px;
     text-align: left; font-style: italic; transition: color .12s ease; }
@@ -185,10 +197,10 @@
 
   /* ── detail view ──────────────────────────────────────────────────────── */
   #hud.detailing #gear, #hud.gauges #gear { display: none; }
-  #detail { -webkit-app-region: no-drag; padding-right: 4px; }
+  #detail { padding-right: 4px; }
   #detail .dhead { display: flex; align-items: baseline; gap: 10px; padding-bottom: 9px;
     margin-bottom: 10px; border-bottom: 1px solid var(--rule); }
-  #detail .back { -webkit-app-region: no-drag; background: none; border: none; color: var(--muted);
+  #detail .back { background: none; border: none; color: var(--muted);
     cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px 0 0; transition: color .12s ease;
     align-self: center; }
   #detail .back:hover { color: var(--accent); }
@@ -202,13 +214,13 @@
   #detail .dinfo-row .v { color: var(--fg); flex: 1 1 auto; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
   #detail .dinfo-row.warn .v { color: var(--amber); }
-  #detail .basetrigger { -webkit-app-region: no-drag; max-width: 175px; display: inline-flex;
+  #detail .basetrigger { max-width: 175px; display: inline-flex;
     align-items: center; gap: 5px; background: var(--well); color: var(--fg);
     border: 1px solid var(--edge); border-radius: 0; padding: 2px 8px; font: inherit; font-size: 11.5px;
     cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   #detail .basetrigger:hover { border-color: var(--accent); }
   #detail .basetrigger .caret { color: var(--dim); flex: 0 0 auto; }
-  #detail .basepop { -webkit-app-region: no-drag; margin: 8px 0 3px; border: 1px solid var(--edge);
+  #detail .basepop { margin: 8px 0 3px; border: 1px solid var(--edge);
     background: var(--well); overflow: hidden; }
   #detail .basesearch { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--fg);
     border: none; border-bottom: 1px solid var(--edge); padding: 8px 9px; font: inherit; font-size: 11.5px; outline: none; }
@@ -228,7 +240,7 @@
   #detail .dbranch { color: var(--fg); font-weight: 600; font-size: 12.5px; flex: 1 1 auto; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
   /* ↑N ahead count doubles as a click-to-push control */
-  #detail .pusharrow { -webkit-app-region: no-drag; background: none; border: none; padding: 1px 6px;
+  #detail .pusharrow { background: none; border: none; padding: 1px 6px;
     margin: 0; font: inherit; font-size: 11.5px; color: var(--accent); cursor: pointer;
     font-variant-numeric: lining-nums tabular-nums; font-weight: 600; display: inline-flex;
     align-items: center; gap: 1px; transition: background .12s ease; }
@@ -244,7 +256,7 @@
   @keyframes pa-pop { 0% { transform: scale(.3); opacity: 0; } 55% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); } }
   @keyframes pa-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 50% { transform: translateX(3px); } 75% { transform: translateX(-2px); } }
   #detail .dactions { display: flex; gap: 5px; }
-  #detail .act { -webkit-app-region: no-drag; flex: 1 1 0; display: flex; flex-direction: column;
+  #detail .act { flex: 1 1 0; display: flex; flex-direction: column;
     align-items: center; gap: 7px; background: var(--well); border: 1px solid var(--edge);
     color: var(--muted); cursor: pointer; font: inherit; padding: 10px 2px;
     transition: background .12s ease, color .12s ease, border-color .12s ease; }
@@ -256,7 +268,7 @@
   #detail .dstatus { color: var(--amber); font-size: 11.5px; margin-top: 11px; text-align: center; font-style: italic; }
 
   /* ── gauges (compact peek) ────────────────────────────────────────────── */
-  #dials { -webkit-app-region: no-drag; display: flex; justify-content: center;
+  #dials { display: flex; justify-content: center;
     align-items: flex-start; gap: 4px; padding: 8px 2px 4px; }
   #dials[hidden] { display: none; } /* id specificity beats the UA [hidden] rule — restore it */
   #dials .dial { display: flex; }
